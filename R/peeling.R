@@ -19,9 +19,6 @@ peeling_Fortran <- function(counsid, pedv, likv, counspr, hwpr,
 
 }
 
-#' @export
-#'
-
 peelingFor <- function(X, G, LIKv, counselee.id){
 
       res <- peeling_Fortran(

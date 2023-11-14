@@ -1,0 +1,20 @@
+#' Eriscam french dataset
+#'
+#' data on 537 Lynch Syndrome french families
+#' First analysis of this dataset with the GRL method (Bonadona et al. JAMA 2011) is published
+#' here <https://jamanetwork.com/journals/jama/fullarticle/900645>
+#'
+#' @format ## `eriscam`
+#' A data frame with 10,261 rows and 9 columns:
+#' \describe{
+#'   \item{Renum.famille}{Family identification number (de-identified)}
+#'   \item{Num.individu}{Individual identification number within the family}
+#'   \item{Sexe}{Sexe}
+#'   \item{Numero.pere, Numero.mere}{Identification numbers of the father and mother. Founders have value (0,0)}
+#'   \item{Statut.index}{Index case}
+#'   \item{geno.MMR}{genotype (1:Mt; 0:wt; 4:unknown)}
+#'   \item{Pheno.HNPCC}{Phenotype (1:affected; 0:unaffected)}
+#'   \item{Age.HNPCC}{Age at last news, or at diagnosis if affected}
+#' }
+#' @source <https://jamanetwork.com/journals/jama/fullarticle/900645>
+"eriscam"

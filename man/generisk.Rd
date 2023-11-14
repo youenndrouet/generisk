@@ -2,7 +2,7 @@
 % Please edit documentation in R/generisk.R
 \name{generisk}
 \alias{generisk}
-\title{generisk is the main function of the generisk package.}
+\title{estimate age-risk (penetrance) functions from family data}
 \usage{
 generisk(
   Ft.pop,
@@ -14,10 +14,11 @@ generisk(
   B = 0,
   rel.tol = 1e-06,
   approxFt.aa = TRUE,
-  n.points = 5,
   approx.np = "spline",
-  ncores = 4,
-  imput_ageNA = FALSE
+  multi.pheno = "first",
+  init.weibull = NULL,
+  ncores = 1,
+  imput_missing_age_last_news = FALSE
 )
 }
 \arguments{
@@ -37,19 +38,24 @@ generisk(
 
 \item{approxFt.aa}{option to calculate Ft.aa}
 
-\item{n.points}{number of points used for the non parametric penetrance function}
-
 \item{approx.np}{linear or spline}
+
+\item{multi.pheno}{strategy in case of multiple diseases (can be "first" or "all")}
+
+\item{init.weibull}{initial values for Weibull model}
 
 \item{ncores}{number of cores used for parallel computing}
 
-\item{imput_ageNA}{logical: imputation of missing ages at last news ?}
+\item{imput_missing_age_last_news}{logical: imputation of missing ages at last news ?}
 }
 \value{
 to be completed
 }
 \description{
-generisk is the main function of the generisk package.
+generisk() is the main function of the generisk package.
+It performs penetrance estimation using maximum likelihood with the GRL method.
+It relies on the Elston-Stewart algorithm to factorizing family data.
+Different options are implemented for parametrization.
 }
 \examples{
 #to be completed

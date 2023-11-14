@@ -11,6 +11,8 @@ Weibull.modified <- function(par,t=0:120){
     return(out)
 }
 
+pmin_na <- function(x) ifelse(all(is.na(x)), NA, min(x, na.rm = T))
+
 #find weibull param
 SCEweibull <- function(x,y) return(sum((y-Weibull.modified(dH1H2toakl(list("d"=x[1],"H1"=x[2],"H2"=x[3]))))^2))
 

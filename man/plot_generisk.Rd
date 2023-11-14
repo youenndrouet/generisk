@@ -2,14 +2,13 @@
 % Please edit documentation in R/plot_generisk.R
 \name{plot_generisk}
 \alias{plot_generisk}
-\title{Title}
+\title{plot penetrance curves estimated with the generisk() function}
 \usage{
 plot_generisk(
   x,
   type = "absolute",
   conf = 0.95,
   add = FALSE,
-  ncurves = 3,
   multiple = FALSE,
   ymax = 1,
   xmax = 100,
@@ -30,8 +29,6 @@ plot_generisk(
 \item{conf}{show bootstrapped 95\% confidence intervals}
 
 \item{add}{add to existing graph}
-
-\item{ncurves}{number of curves}
 
 \item{multiple}{multiple graphs in case of multiple phenotypes}
 
@@ -55,7 +52,7 @@ plot_generisk(
 to be completed
 }
 \description{
-Title
+plot penetrance curves estimated with the generisk() function
 }
 \examples{
 #to be completed

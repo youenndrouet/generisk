@@ -10,8 +10,6 @@ genet_Fortran <- function(hwpr, gprv, ngen, af, nl) {
            nl = as.integer(nl))
 }
 
-#' @export
-#'
 genetFor <- function(allef){ # R wrapper
 
   nloci <- length(allef)

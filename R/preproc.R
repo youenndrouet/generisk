@@ -17,8 +17,6 @@ preproc_Fortran <- function(pedbrutv , pedv, idsv, disv, agev, tesv, ascv, ngen,
            km = as.integer(km))
 }
 
-#' @export
-#'
 preprocFor <- function(ped, allef, ndis){
 
     kmax  <- 50

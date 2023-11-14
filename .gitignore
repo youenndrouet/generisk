@@ -4,3 +4,5 @@ docs
 .Rdata
 .httr-oauth
 .DS_Store
+generisk.png
+devtools_history.R

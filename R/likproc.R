@@ -19,8 +19,6 @@ likproc_Fortran <- function(pedbrutv, ftv, disv, tesv, ascv, agev, liknumv,
 
 }
 
-#' @export
-#'
 
 likprocFor <- function(X, ftv){
     res <- likproc_Fortran(

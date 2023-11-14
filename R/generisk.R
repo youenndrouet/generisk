@@ -13,15 +13,19 @@
 #' @param B option to calculate 95% Bootstrap estimates # number of bootstrap resample (B=0 means no bootstrap)
 #' @param rel.tol precision for the likelihood
 #' @param approxFt.aa option to calculate Ft.aa
-#' @param n.points number of points used for the non parametric penetrance function
+#' @param init.weibull initial values for Weibull model
 #' @param approx.np linear or spline
+#' @param multi.pheno strategy in case of multiple diseases (can be "first" or "all")
 #' @param ncores number of cores used for parallel computing
-#' @param imput_ageNA logical: imputation of missing ages at last news ?
+#' @param imput_missing_age_last_news logical: imputation of missing ages at last news ?
 #'
+#' @import parallel
 #' @importFrom stats runif
 #' @importFrom stats nlminb
+#' @importFrom stats na.omit
 #' @importFrom utils txtProgressBar
 #' @importFrom utils setTxtProgressBar
+#' @importFrom utils packageVersion
 #' @importFrom dplyr bind_rows
 #'
 #' @return to be completed
@@ -49,10 +53,11 @@ generisk <- function(
   B = 0,
   rel.tol = 1e-6,
   approxFt.aa = TRUE,
-  n.points = 5,
   approx.np = "spline",
-  ncores = 4,
-  imput_ageNA = FALSE
+  multi.pheno = "first",
+  init.weibull = NULL,
+  ncores = 1,                   # number of cores (default = 1)
+  imput_missing_age_last_news = FALSE
 ){
 
   minrisk = 1e-16   #default minimum absolute risk is almost 0 (prevent singularities)
@@ -62,24 +67,140 @@ generisk <- function(
   nloci <- length(fA)
   ng <- 3^nloci
 
-  if(imput_ageNA){
-    ## imputation des âges manquants pour age_t1 (et age_t1b)
-    n_toimpute <- sum(DATA$toimpute)
-    DATA$age_T1[DATA$toimpute == 1] <- floor(runif(n = n_toimpute, min = 0, max = 100))
-    DATA$age_T1b <- DATA$age_T1
+  # check and recode DATA in DATA_generisk
+  DATA_generisk <- DATA
+
+  cat(' ________________________________________\n')
+  cat('                                         \n')
+  cat('  The generisk R program \n')
+  cat('  version:', paste(packageVersion("generisk"), collapse = "."), '\n')
+  cat('                                        \n')
+
+  cat('  Number of families: ', length(unique(DATA_generisk[,1])), '\n')
+
+  ## we should check here that diseases are coded 0/1
+  ## and accept no NA
+
+  cc_event <- seq((6+nloci+2)-1, (6+nloci+2*ndis)-1, 2) # columns coding for diseases events 0/1
+  cc_ages  <- seq((6+nloci+2), (6+nloci+2*ndis), 2)  # columns coding for diseases ages at diagnosis or last news
+
+  ## individuals are either:
+  # unaffected (wi_unaff) of affected in at least one disease (wi_aff)
+  if(ndis == 1){
+    wi_unaff <- which(DATA_generisk[,cc_event] == 0)
+    wi_aff <- which(DATA_generisk[,cc_event] != 0)
+    minages_unaff <- DATA[wi_unaff, cc_ages]
+
+  }else{
+    wi_unaff <- which(rowSums(DATA_generisk[,cc_event]) == 0)
+    wi_aff <- which(rowSums(DATA_generisk[,cc_event]) != 0)
+    minages_unaff <- apply(DATA[wi_unaff, cc_ages], 1, pmin_na)
+
   }
 
-  #cl <- makeCluster(ncores)
-  #clusterExport(cl = cl, varlist = c("likprocFor","peelingFor"))
-  # chargement des librairies et programmes FORTRAN utilisées dans les coeurs
-  # clusterEvalQ(cl, {
-  #   source("./Rfunctions/GENERISK_compileFORTRAN.R")
-  # })
+  ## unaffected -> set min age at last news at all diseases
+  ## note : individual with all NA at least news stay NA (see next imputation)
+
+  for (cc in cc_ages){DATA_generisk[wi_unaff, cc] <- minages_unaff}
+
+  ## affected (one or multiple diseases)
+
+  if(ndis == 1){
+
+      ## one disease
+      ages <- DATA[wi_aff, cc_ages]
+      ages[is.na(ages)] <- 0 ## missing age at diagnosis
+      DATA_generisk[wi_aff, cc_ages] <- ages
+
+  }else{
+
+      # multiple diseases
+
+      if(multi.pheno == "first"){
+
+        ## since we restrict analyses to the "competitive risk" framework,
+        ## only the first disease is kept for individuals with multiple diseases
+
+        temp <- apply(as.matrix(DATA[wi_aff, min(cc_event):max(cc_ages)]), 1,
+                      FUN = function(x){
+                        status <- x[seq(1, length(x)-1, 2)]
+                        ages <- x[seq(2, length(x), 2)]
+                        ages[is.na(ages)] <- 0
+                        ages[status == 0 | ages == 0] <- 999
+                        wmin <- which.min(ages)
+                        minage <- min(ages)
+                        if(minage == 999){ ## missing ages at diagnosis
+                          ages.out <- rep(0, length(ages))
+                          status.out <- rep(0, length(status))
+                        }else{ # at least one disease with age at diagnosis
+                          ages.out <- rep(minage, length(ages))
+                          status.out <- rep(0, length(status))
+                          status.out[wmin] <- 1
+                        }
+                        out <-  as.vector(matrix(c(status.out, ages.out),
+                                                 ncol = length(ages.out),
+                                                 byrow = TRUE))
+                        return(out)
+
+                      }
+        )
+
+        DATA_generisk[wi_aff, min(cc_event):max(cc_ages)] <- t(temp)
+
+    }else{
+
+      if(multi.pheno == "all"){
+
+        # disease with missing age at diagnosis are discarded
+        DATA_generisk[wi_aff, cc_ages][is.na(DATA_generisk[wi_aff, cc_ages])] <- 0
+        DATA_generisk[wi_aff, cc_event][DATA_generisk[wi_aff, cc_ages] == 0] <- 0
+
+      }else{
+
+        stop("unknown multi.pheno option")
+      }
+
+    }
+  }
+
+    for (cc in cc_ages){
+      nb_aff <- sum(DATA[,cc-1])
+      nb_aff_analyzed <- sum((DATA_generisk[,cc-1] == 1) & (DATA_generisk[,cc] != 0 ))
+      cat('   -',names(DATA)[cc-1],": ", nb_aff_analyzed, "/",nb_aff, " affected individuals will be analyzed","\n")
+    }
+
+  ##save the DATA before imputation (for bootstrap)
+  DATA_generisk_before_imputed_step <- DATA_generisk
+
+  wi_to_impute <- which(is.na(DATA_generisk[,cc_ages[1]]))
+
+  if(imput_missing_age_last_news){
+    ## replace with median age at last news for unaff
+    DATA_generisk[wi_to_impute, cc_ages] <- median(minages_unaff, na.rm = TRUE)
+    cat('   -', "Unaffected individuals: missing age at last news imputed for", length(wi_to_impute),"/",length(wi_unaff), "individuals", "\n")
+  }else{
+    ## replace NA by O
+    DATA_generisk[wi_to_impute, cc_ages] <- 0
+    cat('   -', "Unaffected individuals:", length(wi_to_impute),"/",length(wi_unaff), " individuals with missing age at last news removed from analysis (age --> 0)", "\n")
+  }
+
+  cat('\n')
+  # if(ncores > 1){
+  #   # set up each worker
+  #   cl <- makeCluster(ncores)
+  #   clusterEvalQ(cl, {
+  #     library(generisk)
+  #     NULL
+  #   })
+  # }
 
 
   #ETAPE 0 : vérification de la cohérence des données familiales
 
-  #checkit <- checkpedigrees(famid = DATA[,1], id = paste(DATA[,1], DATA[,2], sep="/"), father.id = paste(DATA[,1], DATA[,4], sep="/"), mother.id = paste(DATA[,1], DATA[,5], sep="/"))
+  # checkit <- checkpedigrees(famid = DATA[,1],
+  #                           id = paste(DATA[,1], DATA[,2], sep="/"),
+  #                           father.id = paste(DATA[,1], DATA[,4], sep="/"),
+  #                           mother.id = paste(DATA[,1], DATA[,5], sep="/"))
 
   #table(checkit$split) #should be all 1's
   #table(checkit$unrelated) #should be all 0's
@@ -88,32 +209,16 @@ generisk <- function(
 
   # ETAPE 1 : modèle génétique à n loci
 
-  cat("program initialization. \n")
+  cat("  -> Program initialization. \n")
   G <- genetFor(allef=fA)
-
-  # if(n.points == 3){
-  #   aa <- c(20,35,50,120)
-  # }else{
-  #   if(n.points == 5){
-  #     aa <- c(20,35,50,70,90,120)
-  #   }else{
-  #     if(n.points == 8){
-  #       #aa <- c(5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,120)
-  #       aa <- c(5,10,15,20,30,40,50,60,70,80,120)
-  #       # aa <- c(30,40,50,60,70,80,120)
-  #
-  #       n.points <- 10
-  #
-  #     }else{stop("The number of non parametric points must be specified with the n.points parameter")}
-  #   }
-  # }
 
   #ETAPE 2.1 : matrice des paramètres
 
   #intervalles de definition des pénétrances
   AgeDef <- NULL
   for (cc in seq((6+nloci +2),(6+nloci + 2*ndis),2)){
-    AgeDef <- c(AgeDef, list(c(min(DATA[(DATA[,cc-1] == 1) & (DATA[,cc] > 0),cc]), max(DATA[(DATA[,cc-1] == 1) & (DATA[,cc] > 0),cc]))))
+    AgeDef <- c(AgeDef, list(c(min(DATA_generisk[(DATA_generisk[,cc-1] == 1) & (DATA_generisk[,cc] > 0),cc]),
+                               max(DATA_generisk[(DATA_generisk[,cc-1] == 1) & (DATA_generisk[,cc] > 0),cc]))))
   }
   names(AgeDef) <- names(FIT.pars)
 
@@ -129,7 +234,9 @@ generisk <- function(
     }else{
       if(FIT.pars[[dis]]$penet.model == "Cox"){
         penetmodels[dis] <- 2
-      }else{ penetmodels[dis] <- 3} #non parametric
+      }else{
+        penetmodels[dis] <- 3
+      } #non parametric
     }
     for (loci in 1:nloci){
       if(FIT.pars[[dis]]$implic.loci[loci]){
@@ -182,10 +289,10 @@ generisk <- function(
         parrownames <- c(parrownames, paste(disname,"HR", sep=":"))
       }else{ #np
 
-        aa <- c(FIT.pars[[dis]]$agenodes,120)
-
+        agenodes <- FIT.pars[[dis]]$agenodes
+        aa <- c(agenodes,120)
         PARAMS <- rbind(PARAMS, matrix(paste(dis,rep(aa, each = length(PARAM)),PARAM,sep=":"), ncol=length(PARAM), byrow=TRUE))
-        parrownames <- c(parrownames, paste(disname,aa, sep=":"))
+        parrownames <- c(parrownames, paste(disname, aa, sep=":"))
       }
     }
   }
@@ -196,25 +303,30 @@ generisk <- function(
   #remove parameters corresponding to disease with risk=0 for one sex
   ll <- 1
   for (dis in 1:ndis){
-    if(penetmodels[dis] == 1){ nl <- 3 #weibull
+    if(penetmodels[dis] == 1){
+      nl <- 3 #weibull
     }else{
-      if(penetmodels[dis] == 2) nl <- 1 #cox
-      else{
-        n.points <- length(FIT.pars[[dis]]$agenodes)
-        nl <- n.points + 1 #np
+      if(penetmodels[dis] == 2){
+        nl <- 1 #cox
+      }else{
+        nl <- length(FIT.pars[[dis]]$agenodes) + 1
       }
     }
     if(sum(Ft.pop[[dis]][,1]) == 0){ #no risk for men
-      PARAMS[ll:(ll+nl-1),1:ng] <- ""
+      PARAMS[ll:(ll+nl-1), 1:ng] <- ""
     }else{
       if(sum(Ft.pop[[dis]][,2]) == 0){#no risk for women
-        PARAMS[ll:(ll+nl-1),(ng+1):(2*ng)] <- ""
+        PARAMS[ll:(ll+nl-1), (ng+1):(2*ng)] <- ""
       }
     }
-    if(penetmodels[dis] == 1){ ll <- ll + 3 #weibull
+    if(penetmodels[dis] == 1){
+      ll <- ll + 3 #weibull
     }else{
-      if(penetmodels[dis] == 2) ll <- ll + 1 #cox
-      else ll <- ll + n.points + 1 #np
+      if(penetmodels[dis] == 2){
+        ll <- ll + 1 #cox
+      }else{
+        ll <- ll + nl #np
+      }
     }
 
   }
@@ -223,19 +335,24 @@ generisk <- function(
   PARAMS[,c(1,ng+1)] <- ""
 
   #remove the genotypes never observed in data
-  POSS.genotypes <- names(table(rowPaste(DATA[,7:(7+length(fA)-1)])))
+  POSS.genotypes <- names(table(rowPaste(DATA_generisk[,7:(7+length(fA)-1)])))
   POSS.genotypes <- c(paste("m",POSS.genotypes, sep=":"), paste("f",POSS.genotypes, sep=":"))
   for (k in 1:ncol(PARAMS)) if(!(colnames(PARAMS)[k] %in% POSS.genotypes)) PARAMS[,k] <- ""
 
-  PARAMS.mask <- matrix(0,ncol=ncol(PARAMS), nrow=nrow(PARAMS), dimnames =list(rownames(PARAMS),colnames(PARAMS)))
+  PARAMS.mask <- matrix(0,
+                        ncol = ncol(PARAMS),
+                        nrow = nrow(PARAMS),
+                        dimnames = list(rownames(PARAMS),colnames(PARAMS)))
+
   parameters <- unique(as.vector(PARAMS[PARAMS != ""]))
+
   for (k in 1:length(parameters)) PARAMS.mask[PARAMS == parameters[k]] <- k
 
   # ETAPE 2.2 : calculs preliminaires sur les donn?es familiales (pour ne pas refaire ces calculs dans la boucle d'optimisation et de bootstrap)
 
-  cat("pre-calculations to speed-up likelihood algorithm. \n")
-  fids  <- unique(DATA[,1])
-  X <- lapply(fids, function(x) preprocFor(ped = DATA[DATA[,1]==x,-1],allef=fA, ndis=ndis))
+  cat("  -> Pre-calculations to speed-up likelihood algorithm. \n")
+  fids  <- unique(DATA_generisk[,1])
+  X <- lapply(fids, function(x) preprocFor(ped = DATA_generisk[DATA_generisk[,1]==x,-1],allef=fA, ndis=ndis))
   names(X) <- fids
 
   #init values for parameters
@@ -245,17 +362,28 @@ generisk <- function(
   for (dis in 1:ndis){
 
     if(penetmodels[dis] == 1){
+
       nl <- 3 #weibull
+
       for (g in 2:ng){
+
         if(PARAMS.mask[ll,g] == 0 & PARAMS.mask[ll,g+ng] == 0){
         }else{
+
           if(PARAMS.mask[ll,g] == PARAMS.mask[ll,g+ng]){ #equal for male and female
-            fitmf <- nlminb(start = c(d=3/5, H1=2/3, H2=1/4),
-                            objective = function(x) SCEweibull(x, y=rowMeans(Ft.pop[[dis]])),
-                            lower = list(d=0.001, H1=0.001, H2=0.001),
-                            upper = list(d=0.999, H1=0.999, H2=0.999))
-            pars.init <- c(pars.init, fitmf$par)
+
+            if(is.null(init.weibull)){
+              fitmf <- nlminb(start = c(d=3/5, H1=2/3, H2=1/4),
+                              objective = function(x) SCEweibull(x, y=rowMeans(Ft.pop[[dis]])),
+                              lower = list(d=0.001, H1=0.001, H2=0.001),
+                              upper = list(d=0.999, H1=0.999, H2=0.999))
+              pars.init <- c(pars.init, fitmf$par)
+            }else{
+
+            }
+
           }else{
+
             if((PARAMS.mask[ll,g] != 0) & (PARAMS.mask[ll,g+ng] == 0)){ #only men
               fitm <- nlminb(start = c(d=3/5, H1=2/3, H2=1/4),
                              objective = function(x) SCEweibull(x, y=Ft.pop[[dis]][,"m"]),
@@ -306,113 +434,133 @@ generisk <- function(
             }
           }
         }
+
       }else{  #np
+
         n.points <- length(FIT.pars[[dis]]$agenodes)
         nl <- n.points + 1
+        aa <- c(FIT.pars[[dis]]$agenodes,120)
+
         for (g in 2:ng){
           if(PARAMS.mask[ll,g] == 0 & PARAMS.mask[ll,g+ng] == 0){
           }else{
             if(PARAMS.mask[ll,g] == PARAMS.mask[ll,g+ng]){ #equal for male and female
+
               a <- rowMeans(Ft.pop[[dis]])[aa[1:(n.points+1)] + 1]
               b <- rowMeans(Ft.pop[[dis]])[c(1,aa[1:(n.points)] + 1)]
-              pars.init <- c(pars.init, a-b)
+              ## log-transformation to speed-up and improve convergence with nlminb
+              ##1e-6 to deal with 0 values
+              lamb <- log(a-b + 1e-6)
+              pars.init <- c(pars.init, lamb)
             }else{
               if((PARAMS.mask[ll,g] != 0) & (PARAMS.mask[ll,g+ng] == 0)){ #only men
                 a <- Ft.pop[[dis]][aa[1:(n.points+1)] + 1, "m"]
                 b <- Ft.pop[[dis]][c(1,aa[1:(n.points)] + 1), "m"]
-                pars.init <- c(pars.init, a-b)
+                lamb <- log(a-b + 1e-6)
+                pars.init <- c(pars.init, lamb)
               }else{
                 if((PARAMS.mask[ll,g] == 0) & (PARAMS.mask[ll,g+ng] != 0)){#only women
                   a <- Ft.pop[[dis]][aa[1:(n.points+1)] + 1, "f"]
                   b <- Ft.pop[[dis]][c(1,aa[1:(n.points)] + 1), "f"]
-                  pars.init <- c(pars.init, a-b)
+                  lamb <- log(a-b + 1e-6)
+                  pars.init <- c(pars.init, lamb)
                 }else{ #diff for male and female
                   a <- Ft.pop[[dis]][aa[1:(n.points+1)] + 1, "m"]
                   b <- Ft.pop[[dis]][c(1,aa[1:(n.points)] + 1), "m"]
-                  pars.init <- c(pars.init, a-b)
+                  lamb <- log(a-b + 1e-6)
+                  pars.init <- c(pars.init, lamb)
                   a <- Ft.pop[[dis]][aa[1:(n.points+1)] + 1, "f"]
                   b <- Ft.pop[[dis]][c(1,aa[1:(n.points)] + 1), "f"]
-                  pars.init <- c(pars.init, a-b)
+                  lamb <- log(a-b + 1e-6)
+                  pars.init <- c(pars.init, lamb)
                 }
               }
             }
           }
         }
-
-        ## log-transformation to speed-up and improve convergence with nlminb
-        pars.init <- log(pars.init  + 1e-6) ##1e-6 to deal with 0 values
-
       }
     }
     ll <- ll + nl
   }
 
-  lower.weibull <- c(d=0.001, H1=0.001, H2=0.001)
+  #lower.weibull <- c(d=0.001, H1=0.001, H2=0.001)
   upper.weibull <- c(d=0.999, H1=0.999, H2=0.999)
-  lower.cox     <- 1/100
+  #lower.cox     <- 1/100
   upper.cox     <- 100
-  lower.np <- log(1e-6)
+  #lower.np <- log(1e-6)
   upper.np <- log(1)
 
   pars.lower <- pars.upper <- numeric(length(parameters))
 
-  for (a in as.character(1:100)){
-    pars.lower[grep(a,parameters,fixed = TRUE)] <- lower.np
-    pars.upper[grep(a,parameters,fixed = TRUE)] <- upper.np
-  }
+  ## by default, set lower = population incidence
+  pars.lower <- pars.init
+
+   for (a in as.character(1:100)){
+  #    pars.lower[grep(a,parameters,fixed = TRUE)] <- lower.np
+      pars.upper[grep(a,parameters,fixed = TRUE)] <- upper.np
+   }
 
   for (a in c("d","H1","H2")){
-    pars.lower[grep(a,parameters,fixed = TRUE)] <- lower.weibull[a]
+    #pars.lower[grep(a,parameters,fixed = TRUE)] <- lower.weibull[a]
     pars.upper[grep(a,parameters,fixed = TRUE)] <- upper.weibull[a]
+
+    if(!is.null(init.weibull)){
+      pars.init[grep(a,parameters,fixed = TRUE)] <- init.weibull[a]
+    }
+
   }
-  pars.lower[grep("HR",parameters,fixed = TRUE)] <- lower.cox
+
+  #pars.lower[grep("HR",parameters,fixed = TRUE)] <- lower.cox
   pars.upper[grep("HR",parameters,fixed = TRUE)] <- upper.cox
 
+#  nloglik(pars.init, 'G' =G, 'X' = X, 'Ft.pop' = Ft.pop, 'LIK.method' = LIK.method, 'FIT.pars' = FIT.pars, 'approxFt.aa' = approxFt.aa, 'approx.np' = approx.np, 'PARAMS.mask' = PARAMS.mask, 'penetmodels' = penetmodels)
 
-  cat("ML optimization by nlminb. \n")
-  fit <- nlminb(start = pars.init,  # ETAPES 3 et 4  c(d=3/5, H1=2/3, H2=1/4)
-                objective = function(x) nloglik(x, 'G' =G, 'X' = X, 'Ft.pop' = Ft.pop, 'LIK.method' = LIK.method, 'FIT.pars' = FIT.pars, 'approxFt.aa' = approxFt.aa,'approx.np' = approx.np, 'PARAMS.mask' = PARAMS.mask, 'penetmodels' = penetmodels),
+  cat("  -> ML optimization by nlminb. \n")
+  fit <- nlminb(start = pars.init,  # ETAPES 3 et 4
+                objective = function(x) nloglik(x, 'G' =G, 'X' = X, 'Ft.pop' = Ft.pop, 'LIK.method' = LIK.method, 'FIT.pars' = FIT.pars, 'approxFt.aa' = approxFt.aa, 'approx.np' = approx.np, 'PARAMS.mask' = PARAMS.mask, 'penetmodels' = penetmodels),
                 lower = pars.lower,
                 upper = pars.upper,
                 control = list(trace=2,rel.tol=rel.tol))
 
   fta <- array(ftvproc(x = fit$par, args = list('Ft.pop' = Ft.pop, 'FIT.pars' = FIT.pars, 'approxFt.aa' = approxFt.aa, 'approx.np' = approx.np, 'PARAMS.mask' = PARAMS.mask, 'G' =G)), dim=c(121,2,ndis,ng))
 
+  nloglik(fit$par, write_lklbyfam = TRUE, 'G' =G, 'X' = X, 'Ft.pop' = Ft.pop, 'LIK.method' = LIK.method, 'FIT.pars' = FIT.pars, 'approxFt.aa' = approxFt.aa, 'approx.np' = approx.np, 'PARAMS.mask' = PARAMS.mask, 'penetmodels' = penetmodels)
+
   if(B > 0){
-    cat("Bootstrap in progress... \n")
+
+    cat("\n  -> Bootstrap analysis for Confidence Intervals \n")
     pb <- txtProgressBar(char = "*", style =3)
     Sys.sleep(0.1)
     RESboot <- NULL
     ftaboot <- NULL
+
     for (b in seq(B)){
 
-      # ech bootstrap
+      if(!imput_missing_age_last_news){
 
-      if(imput_ageNA){
-
-        ## imputation des âges NA
-
-        fids.boot <- sample(fids, replace = TRUE)
-        DATA.boot <- lapply(fids.boot, FUN=function(f) DATA[DATA$numFam == f,])
-
-        # on change le numfam (cas des familles sélectionnées plusieurs fois...)
-        DATA.boot <- bind_rows(DATA.boot, .id = "fid")
-        DATA.boot$numFam <- NULL
-
-        ## imputation des âges manquants pour age_t1 et age_t1b
-        n_toimpute <- sum(DATA.boot$toimpute)
-        DATA.boot$age_T1[DATA.boot$toimpute == 1] <- floor(runif(n = n_toimpute, min = 0, max = 100))
-        DATA.boot$age_T1b <- DATA.boot$age_T1
-
-        ## pré-calculs pour FORTRAN
-        fids.boot  <- unique(DATA.boot$fid)
-        X.boot <- lapply(fids.boot, function(f) preprocFor(ped = DATA.boot[DATA.boot$fid==f,-1],allef=fA, ndis=ndis))
-        names(X.boot) <- fids.boot
-
+        # directly use the pre-computed X object
+        X.boot <- bootfam(X)
 
       }else{
 
-        X.boot <- bootfam(X)
+        # have to re-compute from DATA_generisk_before_imputed_step
+        fids.boot <- sample(fids, replace = TRUE)
+        DATA_generisk.boot <- lapply(fids.boot, FUN=function(f) DATA_generisk_before_imputed_step[DATA_generisk_before_imputed_step[,1] == f,][,-1])
+
+        # numfam is changed to fix the case of families selected multiple times..
+        DATA_generisk.boot <- bind_rows(DATA_generisk.boot, .id = "fid")
+
+        # imputation of missing ages
+        wi_to_impute.boot <- which(is.na(DATA_generisk.boot[,cc_ages[1]]))
+        n_to_impute <- length(wi_to_impute.boot)
+        ages_imputed <- sample(x = na.omit(minages_unaff), size = n_to_impute, replace = TRUE)
+
+        for (cc in cc_ages){DATA_generisk.boot[wi_to_impute.boot, cc] <- ages_imputed}
+
+        ## pré-calculs pour FORTRAN
+        fids.boot  <- unique(DATA_generisk.boot$fid)
+        X.boot <- lapply(fids.boot, function(f) preprocFor(ped = DATA_generisk.boot[DATA_generisk.boot$fid==f,-1],allef=fA, ndis=ndis))
+        names(X.boot) <- fids.boot
 
       }
 
@@ -437,8 +585,10 @@ generisk <- function(
       setTxtProgressBar(pb, b/B)
     }
     close(pb)
+    cat("\n  job done !\n")
     return(list(fit=c(fit,paramsmask = list(PARAMS.mask), ft=list(fta)), boot = list(fit.boot = RESboot, ft.boot = ftaboot), params=list(Ft.pop = Ft.pop,'approx.np' = approx.np ,FIT.pars = FIT.pars, LIK.method=LIK.method, fA=fA, rel.tol=rel.tol, AgeDef = AgeDef), X=X, G=G))
   }else{
+    cat("\n  job done !\n")
     return(list(fit=c(fit,paramsmask = list(PARAMS.mask), ft=list(fta)),params=list(Ft.pop = Ft.pop,'approx.np' = approx.np, FIT.pars = FIT.pars, LIK.method=LIK.method, fA=fA, rel.tol=rel.tol, AgeDef = AgeDef), X=X, G=G))
   }
 

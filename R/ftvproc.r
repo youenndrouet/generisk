@@ -104,9 +104,10 @@ ftvproc <- function(x, args){
                          xx <- c(xx, 120)
 
                          y <- Constrain01(cumsum(exp(params[ll:(ll + n.points +1 -1), cc])))
-                         #y <- Constrain01(cumsum(params[ll:(ll + args$n.points +1 -1), cc]))
 
-                         if(any(is.na(y))) stop("ERROR in the ftprocv function !")
+                         if(any(is.na(y))){
+                           stop("ERROR in the ftprocv function !")
+                         }
 
                          if(args$approx.np == "spline"){
                              yy <- splinefun(x=c(0,xx),y=c(0,y), method="hyman")

@@ -4,7 +4,6 @@
 #' @param type absolute or relative
 #' @param conf show bootstrapped 95% confidence intervals
 #' @param add add to existing graph
-#' @param ncurves number of curves
 #' @param multiple multiple graphs in case of multiple phenotypes
 #' @param ymax maximum value for y axis
 #' @param xmax maximum value for x axis
@@ -32,7 +31,6 @@ plot_generisk <- function(x,
                           type="absolute",
                           conf=0.95,
                           add=FALSE,
-                          ncurves = 3,
                           multiple=FALSE,
                           ymax=1,
                           xmax=100,
@@ -40,19 +38,17 @@ plot_generisk <- function(x,
                           legendloc="right",
                           legendtext=NULL,
                           cols=rep(c("#87CEFA","#FF0000","#00CD00",
-                                                "#00CED1","#E9967A","#006400",
-                                                "#FF8C00","#00008B","#8B008B",
-                                                "#008B8B"),3),
+                                     "#00CED1","#E9967A","#006400",
+                                     "#FF8C00","#00008B","#8B008B",
+                                     "#008B8B"),3),
                           main ="",
                           show.other = FALSE){
 
   is.bootstrap <- ('boot' %in% names(x))
   qn <- qnorm(1-(1-conf)/2)
-
-  TAB <- NULL
-  aa <- c(5,10,15,seq(20,80,10))
-
   mask  <- x$fit$paramsmask
+
+  ncurves <- 1
 
   if(legendloc=="right") marg <- c(5,6,5,20)
   else{
@@ -93,13 +89,20 @@ plot_generisk <- function(x,
 
     if(penetmod == "np"){
 
-      np <- length(x$par$FIT.pars[[dis]]$agenodes) + 1
-      penetmod <- paste0("Np -", np-1," age-nodes")
+      agenodes <- x$par$FIT.pars[[dis]]$agenodes
+      np <- length(agenodes) + 1
+      penetmod <- paste0("NP nodes at: ", paste(agenodes, collapse = "/"))
 
-    }else{ if(penetmod == "Weibull"){   np <- 3
-    }else{ if(penetmod == "Cox"){ np <- 1
-    }else{warning("Unknown penetrance model")}
-    }
+    }else{
+      if(penetmod == "Weibull"){
+        np <- 3
+      }else{
+        if(penetmod == "Cox"){
+          np <- 1
+        }else{
+          warning("Unknown penetrance model")
+        }
+      }
     }
 
     for (cc in match(paramll, mask[ll,])){
@@ -145,8 +148,8 @@ plot_generisk <- function(x,
         X.Vec <- c(seqx, tail(seqx, 1), rev(seqx), seqx[1])
         X.Vec.all <- c(seqx.all, tail(seqx.all, 1), rev(seqx.all), seqx.all[1])
         if(type=="absolute"){
-          lines(seqx.all, tra.all["mean",], col=cols[colk], lwd=1, lty=2)
-          lines(seqx, tra["mean",], col=cols[colk], lwd=2)
+          lines(seqx.all, tra.all["median",], col=cols[colk], lwd=1, lty=2)
+          lines(seqx, tra["median",], col=cols[colk], lwd=2)
           Y.Vec <- c(CI.L, tail(CI.U, 1), rev(CI.U), CI.L[1])
           Y.Vec.all <- c(CI.L.all, tail(CI.U.all, 1), rev(CI.U.all), CI.L.all[1])
         }else{
@@ -176,13 +179,8 @@ plot_generisk <- function(x,
 
               lines(seqx.all, Ft.all, col=cols[colk], lwd=1, lty=2)
               lines(seqx, Ft, col=cols[colk], lwd=2)
-              TAB <- rbind(TAB,c(paste(labcurve,paste('(',penetmod,')',sep=""), sep=' '), round(Ft.all[as.character(aa)]*100,1)))
 
             }else{
-
-              icaa <- paste(round(tra.all['qlo',as.character(aa)]*100,1), round(tra.all['qup',as.character(aa)]*100,1), sep='-')
-              stat <- paste(round(tra.all["mean",as.character(aa)]*100,1),"<br>(",icaa,")",sep="")
-              TAB <- rbind(TAB,c(paste(labcurve,paste('(',penetmod,')',sep=""), sep=' '),stat ))
 
             }
 
@@ -212,19 +210,13 @@ plot_generisk <- function(x,
 
             if(type!="absolute"){
               if(is.bootstrap){
-                lines(seqx.all, tra.all["mean",]/Ftpop.all, col=cols[colk], lwd=1, lty=2)
-                lines(seqx, tra["mean",]/Ftpop, col=cols[colk], lwd=2)
-                icaa <- paste(round((tra.all['qlo',]/Ftpop.all)[as.character(aa)],1), round((tra.all['qup',]/Ftpop.all)[as.character(aa)],1), sep='-')
-                stat <- paste(round((tra.all["mean",]/Ftpop.all)[as.character(aa)],1),"<br>(",icaa,")",sep="")
-                TAB <- rbind(TAB,c(paste(labcurve,paste('(',penetmod,')',sep=""), sep=' '),stat ))
+                lines(seqx.all, tra.all["median",]/Ftpop.all, col=cols[colk], lwd=1, lty=2)
+                lines(seqx, tra["median",]/Ftpop, col=cols[colk], lwd=2)
               }else{
                 lines(seqx.all, Ft.all/Ftpop.all, col=cols[colk], lwd=1, lty=2)
                 lines(seqx, Ft/Ftpop, col=cols[colk], lwd=2)
-                TAB <- rbind(TAB,c(paste(labcurve,paste('(',penetmod,')',sep=""), sep=' '), round((Ft.all/Ftpop.all)[as.character(aa)],1)))
               }
             }
-
-
 
           }
         }
@@ -241,7 +233,7 @@ plot_generisk <- function(x,
         }
         abline(h=1,lty=2)
       }
-      ncurves <- ncurves  -1
+      ncurves <- ncurves + 1
     }
     ll <- ll - np
     dis <- dis - 1
@@ -250,7 +242,7 @@ plot_generisk <- function(x,
     #legend(x="topleft",legend=TEXTleg, lty=1, col=cols[1:colk],lwd=2)
   }
 
-  colnames(TAB) <- c("strata", paste0("Age=",aa))
-
-  return(TAB)
 }
+
+
+
