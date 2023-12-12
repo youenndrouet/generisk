@@ -4,12 +4,14 @@
 \alias{nloglik}
 \title{Title}
 \usage{
-nloglik(x, write_lklbyfam = FALSE, ...)
+nloglik(x, write_lklbyfam = FALSE, cl = NULL, ...)
 }
 \arguments{
 \item{x}{parameters of the penetrance curve}
 
 \item{write_lklbyfam}{write a csv file with LKL by family}
+
+\item{cl}{cluster object for parallel computing}
 
 \item{...}{internal args}
 }

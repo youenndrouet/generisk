@@ -3,6 +3,7 @@
 #'
 #' @param x parameters of the penetrance curve
 #' @param write_lklbyfam write a csv file with LKL by family
+#' @param cl cluster object for parallel computing
 #' @param ... internal args
 #'
 #' @return to be completed
@@ -12,7 +13,7 @@
 #'
 #' @importFrom utils write.table
 
-nloglik <- function(x, write_lklbyfam = FALSE, ...){
+nloglik <- function(x, write_lklbyfam = FALSE, cl = NULL, ...){
 
   args  <- list(...)
 
@@ -26,64 +27,66 @@ nloglik <- function(x, write_lklbyfam = FALSE, ...){
 
   # ETAPE 4 : calcul de la vraisemblance par l'algo d'Elston-Stewart
 
-  loglikbyfam <- matrix(0,nrow=length(args$X),ncol=3)
+  loglikbyfam <- matrix(0, nrow=length(args$X), ncol=3)
   rownames(loglikbyfam) <- names(args$X)
   colnames(loglikbyfam) <- c("mLKL_Phe_Gen","mLKL_Phe_Gen_Index","mLKL_GRL")
 
   if(args$LIK.method == "GRL"){
 
-    # chargement des objets et fonctions dans les coeurs de calcul du cluster
-    #clusterExport(cl = cl, varlist = c("args"))
+    if(!is.null(cl)){
 
-    for (f in names(args$X)){
+      loglikbyfam <- t(parSapply(cl = cl,
+                              X = args$X,
+                              FUN = loglikf,
+                              G = args$G,
+                              ftv = ftv)
+                       )
 
-      # # ETAPE 4.1 : Init of likelihood matrices
-       L <- likprocFor(X = args$X[[f]], ftv = ftv)
-      #
-      # # ETAPE 4.2 : likelihood by Elston Stewart algorithm
-       cid <- args$X[[f]]$ni #last individual, to begin likelihood at the bottom of the tree
-      #
-       logliknum   <- peelingFor(X = args$X[[f]], G = args$G, LIKv=L$liknumv,   counselee.id = cid)$loglik
-       loglikdenom <- peelingFor(X = args$X[[f]], G = args$G, LIKv=L$likdenomv, counselee.id = cid)$loglik
-       loglikgrl   <- logliknum - loglikdenom
-       loglikbyfam[f,1:3] <- c(logliknum,loglikdenom,loglikgrl)
-       if(any(!is.finite(c(logliknum,loglikdenom)))){
-         loglikgrl <- 0
-         loglikbyfam[f,1:3] <-  0
-         warning("family :",f,"excluded for unknown reason \n")
-       }
+    }else{
+
+      loglikbyfam <- t(sapply(X = args$X,
+                              FUN = loglikf,
+                              G = args$G,
+                              ftv = ftv)
+                       )
 
     }
 
-    # loglikbyfam <- clusterApply(cl = cl,
-    #                             x = args$X,
-    #                             fun = function(x){
-    #                               #  STEP 4.1 : Init of likelihood matrices
-    #                               L <- likprocFor(X = x, ftv = ftv)
-    #
-    #                               #  STEP 4.2 : likelihood computing by Elston Stewart algorithm
-    #                               cid <- x$ni #last individual, to begin likelihood at the bottom of the tree
-    #
-    #                               logliknum   <- peelingFor(X = x, G = args$G, LIKv=L$liknumv,   counselee.id = cid)$loglik
-    #                               loglikdenom <- peelingFor(X = x, G = args$G, LIKv=L$likdenomv, counselee.id = cid)$loglik
-    #                               loglikgrl   <- logliknum - loglikdenom
-    #                               loglikbyfam[f,1:3] <- c(logliknum,loglikdenom,loglikgrl)
-    #                               if(any(!is.finite(c(logliknum,loglikdenom)))){
-    #                                 loglikgrl <- 0
-    #                                 #loglikbyfam[f,1:3] <-  0
-    #                                 warning("family :",f,"excluded for unknown reason \n")
-    #                               }
-    #                             })
-
     if(write_lklbyfam){
-      loglikbyfam$fid <- rownames(loglikbyfam)
-      write.table(loglikbyfam[,c(4,1,2,3)], "loglikbyfam.csv", sep = ";", row.names = FALSE)
+      write.table(loglikbyfam, "loglikbyfam.csv", sep = ";")
       cat('\n',"The GRL log-likelihood per family (-LKL) is written in 'loglikbyfam.csv' file at your current workspace.\n")
     }
 
 
   }
 
-  return(-sum(loglikbyfam[,3]))
+  return(-sum(loglikbyfam[,"mLKL_GRL"]))
+
+}
+
+
+
+loglikf <- function(f, G, ftv){
+
+  ## STEP 4.1 : Init of likelihood matrices
+  L <- likprocFor(X = f, ftv = ftv)
+
+  ## STEP 4.2 : likelihood by Elston Stewart algorithm
+  cid <- f$ni #last individual, to begin likelihood at the bottom of the tree
+  logliknum   <- peelingFor(X = f, G = G, LIKv=L$liknumv,   counselee.id = cid)$loglik
+  loglikdenom <- peelingFor(X = f, G = G, LIKv=L$likdenomv, counselee.id = cid)$loglik
+
+  if(any(!is.finite(c(logliknum,loglikdenom)))){
+    loglikgrl <- 0
+    loglik_all <-  c(0,0,0)
+    warning("family excluded for unknown reason \n")
+  }else{
+    loglikgrl   <- logliknum - loglikdenom
+    loglik_all  <- c("mLKL_Phe_Gen" = logliknum,
+                     "mLKL_Phe_Gen_Index" = loglikdenom,
+                     "mLKL_GRL" = loglikgrl)
+  }
+
+  return(loglik_all)
 
 }

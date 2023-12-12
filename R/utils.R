@@ -57,6 +57,7 @@ bootfam <- function(x, n=NULL){
 
   pos.f.resample <- sample(1:size, size, replace = TRUE, prob = NULL)
   x.resample <- x[pos.f.resample]
+
   names(x.resample) <- 1:size
 
   return(x.resample)
@@ -76,34 +77,5 @@ compareModels <- function(x1,x2){
   return(list('lr'=lr,'pvalue' = pvalue))
 }
 
-colpct <- function(col,pct) return(paste(col,pct,sep=""))
 
-empty.plot <- function(type="absolute", ymax, xmax, marg, main){
-
-  par(mar=marg,las=1)
-  if(type=="absolute"){
-    plot(NA,NA, type="n", xlim=c(0,xmax), ylim=c(0,ymax), ann=FALSE, bty="n",axes=FALSE)
-    #rect(0,0,100,1, col=gray(.96))
-    abline(h = seq(0,1,0.02), v = seq(10,90,10),col=gray(.95),lty=3 )
-    abline(h = seq(0,1,0.1) , v = seq(0,90,20), col=gray(.85),lty=3)
-    axis(2,lwd=1,col = gray(.7), at = seq(0,1,0.1), labels=seq(0,1,0.1)*100)
-    title(ylab="",main="Cumulative risk (%)", cex.lab = 1.3)
-  }else{
-    plot(NA,NA, type="n", xlim=c(0,xmax), ylim=c(0.1,100000), log="y", xlab="", ylab ="", bty="n",axes=FALSE)
-    abline(h = c(seq(0.2,0.9,0.1),
-                 seq(2,9,1),
-                 seq(20,90,10),
-                 seq(200,900,100),
-                 seq(2000,9000,1000),
-                 seq(20000,90000,10000)),
-           v = seq(10,90,10),
-           col=gray(.95),lty=3 )
-    abline(h = c(.01,.1,10,100,1000,10000), v = seq(0,90,20),col=gray(.85),lty=3)
-    axis(2, at=c(0.01,0.1,1,10,100,1000,1e4,1e5 ), labels=c(".01", ".1","1","10","100","1000", 1e4, 1e5),lwd=1,col = gray(.7))
-    title(ylab="",main="Risk ratio to pop. incidence \n (log-scale)", cex.lab = 1.3)
-  }
-  title(xlab="Age (y)", cex.lab = 1.3)
-  axis(1,lwd=1,col = gray(.7))
-
-}
 

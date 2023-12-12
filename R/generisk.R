@@ -12,6 +12,7 @@
 #' @param fA a vector of pop. allele frequencies of tested loci (order must corresponds to that of DATA columns)
 #' @param B option to calculate 95% Bootstrap estimates # number of bootstrap resample (B=0 means no bootstrap)
 #' @param rel.tol precision for the likelihood
+#' @param rel.tol.boot precision for the likelihood in the bootstrap
 #' @param approxFt.aa option to calculate Ft.aa
 #' @param init.weibull initial values for Weibull model
 #' @param approx.np linear or spline
@@ -52,9 +53,10 @@ generisk <- function(
   fA = c(MMR = 0.001),
   B = 0,
   rel.tol = 1e-6,
+  rel.tol.boot = 1e-6,
   approxFt.aa = TRUE,
   approx.np = "spline",
-  multi.pheno = "first",
+  multi.pheno = "all",
   init.weibull = NULL,
   ncores = 1,                   # number of cores (default = 1)
   imput_missing_age_last_news = FALSE
@@ -169,7 +171,7 @@ generisk <- function(
       cat('   -',names(DATA)[cc-1],": ", nb_aff_analyzed, "/",nb_aff, " affected individuals will be analyzed","\n")
     }
 
-  ##save the DATA before imputation (for bootstrap)
+  ## save the DATA before imputation (for bootstrap)
   DATA_generisk_before_imputed_step <- DATA_generisk
 
   wi_to_impute <- which(is.na(DATA_generisk[,cc_ages[1]]))
@@ -185,15 +187,29 @@ generisk <- function(
   }
 
   cat('\n')
-  # if(ncores > 1){
-  #   # set up each worker
-  #   cl <- makeCluster(ncores)
-  #   clusterEvalQ(cl, {
-  #     library(generisk)
-  #     NULL
-  #   })
-  # }
 
+  if(ncores > 1){
+
+    available_cores <- detectCores()
+
+    if(available_cores >= ncores){
+      cat("Parallel computing using", ncores, "/", available_cores, "available cores. \n")
+
+      # set up each worker
+      cl <- makeCluster(ncores)
+      clusterEvalQ(cl, {
+        library(generisk)
+        NULL
+      })
+
+    }else{
+      cl <- NULL
+      cat("Available cores < ", ncores, ", please consider decreasing ncores to perform parallel computing. \n")
+    }
+
+  }else{
+    cl <- NULL
+  }
 
   #ETAPE 0 : vérification de la cohérence des données familiales
 
@@ -483,26 +499,25 @@ generisk <- function(
     ll <- ll + nl
   }
 
-  #lower.weibull <- c(d=0.001, H1=0.001, H2=0.001)
+
   upper.weibull <- c(d=0.999, H1=0.999, H2=0.999)
-  #lower.cox     <- 1/100
   upper.cox     <- 100
-  #lower.np <- log(1e-6)
   upper.np <- log(1)
+
+  #lower.weibull <- c(d=0.001, H1=0.001, H2=0.001)
+  #lower.cox <- 1
 
   pars.lower <- pars.upper <- numeric(length(parameters))
 
-  ## by default, set lower = population incidence
   pars.lower <- pars.init
 
-   for (a in as.character(1:100)){
-  #    pars.lower[grep(a,parameters,fixed = TRUE)] <- lower.np
+  for (a in as.character(1:100)){
       pars.upper[grep(a,parameters,fixed = TRUE)] <- upper.np
-   }
+  }
 
   for (a in c("d","H1","H2")){
-    #pars.lower[grep(a,parameters,fixed = TRUE)] <- lower.weibull[a]
     pars.upper[grep(a,parameters,fixed = TRUE)] <- upper.weibull[a]
+    #pars.lower[grep(a,parameters,fixed = TRUE)] <- lower.weibull[a]
 
     if(!is.null(init.weibull)){
       pars.init[grep(a,parameters,fixed = TRUE)] <- init.weibull[a]
@@ -510,21 +525,30 @@ generisk <- function(
 
   }
 
-  #pars.lower[grep("HR",parameters,fixed = TRUE)] <- lower.cox
   pars.upper[grep("HR",parameters,fixed = TRUE)] <- upper.cox
-
-#  nloglik(pars.init, 'G' =G, 'X' = X, 'Ft.pop' = Ft.pop, 'LIK.method' = LIK.method, 'FIT.pars' = FIT.pars, 'approxFt.aa' = approxFt.aa, 'approx.np' = approx.np, 'PARAMS.mask' = PARAMS.mask, 'penetmodels' = penetmodels)
+  #pars.lower[grep("HR",parameters,fixed = TRUE)] <- lower.cox
 
   cat("  -> ML optimization by nlminb. \n")
   fit <- nlminb(start = pars.init,  # ETAPES 3 et 4
-                objective = function(x) nloglik(x, 'G' =G, 'X' = X, 'Ft.pop' = Ft.pop, 'LIK.method' = LIK.method, 'FIT.pars' = FIT.pars, 'approxFt.aa' = approxFt.aa, 'approx.np' = approx.np, 'PARAMS.mask' = PARAMS.mask, 'penetmodels' = penetmodels),
+                objective = function(x) nloglik(x,
+                                                write_lklbyfam = FALSE,
+                                                cl = cl,
+                                                'G' = G,
+                                                'X' = X,
+                                                'Ft.pop' = Ft.pop,
+                                                'LIK.method' = LIK.method,
+                                                'FIT.pars' = FIT.pars,
+                                                'approxFt.aa' = approxFt.aa,
+                                                'approx.np' = approx.np,
+                                                'PARAMS.mask' = PARAMS.mask,
+                                                'penetmodels' = penetmodels),
                 lower = pars.lower,
                 upper = pars.upper,
-                control = list(trace=2,rel.tol=rel.tol))
+                control = list(trace=1, rel.tol=rel.tol))
 
   fta <- array(ftvproc(x = fit$par, args = list('Ft.pop' = Ft.pop, 'FIT.pars' = FIT.pars, 'approxFt.aa' = approxFt.aa, 'approx.np' = approx.np, 'PARAMS.mask' = PARAMS.mask, 'G' =G)), dim=c(121,2,ndis,ng))
 
-  nloglik(fit$par, write_lklbyfam = TRUE, 'G' =G, 'X' = X, 'Ft.pop' = Ft.pop, 'LIK.method' = LIK.method, 'FIT.pars' = FIT.pars, 'approxFt.aa' = approxFt.aa, 'approx.np' = approx.np, 'PARAMS.mask' = PARAMS.mask, 'penetmodels' = penetmodels)
+  nloglik(fit$par, write_lklbyfam = TRUE, cl = cl, 'G' =G, 'X' = X, 'Ft.pop' = Ft.pop, 'LIK.method' = LIK.method, 'FIT.pars' = FIT.pars, 'approxFt.aa' = approxFt.aa, 'approx.np' = approx.np, 'PARAMS.mask' = PARAMS.mask, 'penetmodels' = penetmodels)
 
   if(B > 0){
 
@@ -565,9 +589,11 @@ generisk <- function(
       }
 
 
-      fit.boot <- nlminb(start = fit$par, #init ? partir du max LIK pour les bootstrap
+      fit.boot <- nlminb(start = pars.init,
                          objective = function(x) nloglik(x,
-                                                         'G' =G,
+                                                         write_lklbyfam = FALSE,
+                                                         cl = cl,
+                                                         'G' = G,
                                                          'X' = X.boot,
                                                          'Ft.pop' = Ft.pop,
                                                          'LIK.method' = LIK.method,
@@ -578,7 +604,8 @@ generisk <- function(
                                                          'penetmodels' = penetmodels),
                          lower = pars.lower,
                          upper = pars.upper,
-                         control = list(trace=0,rel.tol=rel.tol))
+                         control = list(trace=10, rel.tol = rel.tol.boot))
+
       ftab <- array(ftvproc(x = fit.boot$par, args = list('Ft.pop' = Ft.pop, 'FIT.pars' = FIT.pars, 'approxFt.aa' = approxFt.aa,'approx.np' = approx.np, 'PARAMS.mask' = PARAMS.mask, 'G' =G)), dim=c(121,2,ndis,ng))
       ftaboot <- c(ftaboot,list(ftab))
       RESboot <- rbind(RESboot,c(convergence = fit.boot$convergence, fit.boot$par, nloglik = fit.boot$objective))
@@ -586,11 +613,43 @@ generisk <- function(
     }
     close(pb)
     cat("\n  job done !\n")
-    return(list(fit=c(fit,paramsmask = list(PARAMS.mask), ft=list(fta)), boot = list(fit.boot = RESboot, ft.boot = ftaboot), params=list(Ft.pop = Ft.pop,'approx.np' = approx.np ,FIT.pars = FIT.pars, LIK.method=LIK.method, fA=fA, rel.tol=rel.tol, AgeDef = AgeDef), X=X, G=G))
+
+    out <- list("fit" = c(fit,
+                          "paramsmask" = list(PARAMS.mask),
+                          "ft" = list(fta)),
+                "boot" = list("fit.boot" = RESboot,
+                              "ft.boot" = ftaboot),
+                "params" = list("Ft.pop" = Ft.pop,
+                                'approx.np' = approx.np,
+                                "FIT.pars" = FIT.pars,
+                                "LIK.method" = LIK.method,
+                                "fA" = fA,
+                                "rel.tol" = rel.tol,
+                                "AgeDef" = AgeDef),
+                "X" = X,
+                "G" = G,
+                "DATA_generisk" = DATA_generisk)
+
   }else{
+
     cat("\n  job done !\n")
-    return(list(fit=c(fit,paramsmask = list(PARAMS.mask), ft=list(fta)),params=list(Ft.pop = Ft.pop,'approx.np' = approx.np, FIT.pars = FIT.pars, LIK.method=LIK.method, fA=fA, rel.tol=rel.tol, AgeDef = AgeDef), X=X, G=G))
+    out <- list("fit" = c(fit,
+                          "paramsmask" = list(PARAMS.mask),
+                          "ft" = list(fta)),
+                "params" = list("Ft.pop" = Ft.pop,
+                                'approx.np' = approx.np,
+                                "FIT.pars" = FIT.pars,
+                                "LIK.method" = LIK.method,
+                                "fA" = fA,
+                                "rel.tol" = rel.tol,
+                                "AgeDef" = AgeDef),
+                "X" = X,
+                "G" = G,
+                "DATA_generisk" = DATA_generisk)
   }
 
-  #  stopCluster(cl)
+  if(!is.null(cl)){stopCluster(cl)}
+
+  return(out)
+
 }

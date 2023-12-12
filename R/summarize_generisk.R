@@ -79,13 +79,17 @@ summarize_generisk <- function(x,
       names(Ft.all) <- names(Ftpop.all) <- as.character(seqx.all)
 
       if(is.bootstrap){    # compute bootstrap IC
-         Ftb    <- sapply(x$boot$ft.boot,FUN=function(x) x[,sexe[cc],dis,geno[cc]])
-         tra.all  <- sapply(seqx.all,FUN = function(x){
+
+         Ftb    <- sapply(x$boot$ft.boot, FUN=function(x) x[,sexe[cc],dis,geno[cc]])
+         tra.all  <- sapply(seqx.all, FUN = function(x){
                               meanx  <- exp(mean(log(Ftb[x+1,])))
                               medix  <- median(Ftb[x+1,])
                               qlo    <- quantile(Ftb[x+1,], (1-conf)/2)
                               qup    <- quantile(Ftb[x+1,], 1- ((1-conf)/2))
-                              return(c("mean" = meanx,"median" = medix, "qlo" = as.double(qlo), "qup" = as.double(qup)))
+                              return(c("mean" = meanx,
+                                       "median" = medix,
+                                       "qlo" = as.double(qlo),
+                                       "qup" = as.double(qup)))
                             })
 
          colnames(tra.all) <- seqx.all

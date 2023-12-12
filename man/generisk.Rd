@@ -13,9 +13,10 @@ generisk(
   fA = c(MMR = 0.001),
   B = 0,
   rel.tol = 1e-06,
+  rel.tol.boot = 1e-06,
   approxFt.aa = TRUE,
   approx.np = "spline",
-  multi.pheno = "first",
+  multi.pheno = "all",
   init.weibull = NULL,
   ncores = 1,
   imput_missing_age_last_news = FALSE
@@ -35,6 +36,8 @@ generisk(
 \item{B}{option to calculate 95\% Bootstrap estimates # number of bootstrap resample (B=0 means no bootstrap)}
 
 \item{rel.tol}{precision for the likelihood}
+
+\item{rel.tol.boot}{precision for the likelihood in the bootstrap}
 
 \item{approxFt.aa}{option to calculate Ft.aa}
 

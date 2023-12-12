@@ -13,42 +13,241 @@ knitr::opts_chunk$set(
 )
 ```
 
-# generisk
+# generisk <a href="https://github.com/youenndrouet/generisk"><img src="man/figures/logo.png" align="right" height="138" /></a>
 
 <!-- badges: start -->
 <!-- badges: end -->
 
-The goal of generisk is to ...
+
+## Overview
+
+The goal of generisk is to perform estimation of the Genotype Restricted Likelihood (GRL) from family data. 
+
+The main function is `generisk()`.
 
 ## Installation
 
 You can install the development version of generisk like so:
 
-``` r
-# FILL THIS IN! HOW CAN PEOPLE INSTALL YOUR DEV PACKAGE?
+```r
+# install.packages("pak")
+pak::pak("youenndrouet/generisk")
 ```
 
 ## Example
 
-This is a basic example which shows you how to solve a common problem:
+This is a basic example which shows you how to use generisk on a dataset of 236 Lynch Syndrome french families with MLH1 mutations. The first analysis of the full dataset comprising 537 families  with the GRL method is published here (Bonadona et al. JAMA 2011) https://jamanetwork.com/journals/jama/fullarticle/900645. 
 
-```{r example}
-library(generisk)
-## basic example code
+```{r }
+library(generisk) # load the generisk package
+library(dplyr) # load the dplyr package to manipulate the data
+
+# generisk package comes with the eriscam_mlh1 dataset
+
+dat_GRL <- eriscam_mlh1 %>%
+   mutate(SEX_recoded = if_else(SEX == 1, 1, 0),
+         CRC_event = if_else(!is.na(COLORECTUM),
+                             if_else(!is.na(FIRST_COLONOSCOPY), 
+                                    if_else(COLORECTUM < FIRST_COLONOSCOPY, 
+                                            1, 
+                                            0),
+                                    1), 
+                             0),
+         CRC_age = if_else(!is.na(COLORECTUM),
+                             if_else(!is.na(FIRST_COLONOSCOPY), 
+                                    if_else(COLORECTUM < FIRST_COLONOSCOPY, 
+                                            COLORECTUM, 
+                                            FIRST_COLONOSCOPY),
+                                    AGE_AT_LAST_NEWS), 
+                             AGE_AT_LAST_NEWS),
+         
+         END_event = if_else(!is.na(ENDOMETRIUM),
+                             if_else(!is.na(HYSTERECTOMY), 
+                                    if_else(ENDOMETRIUM < HYSTERECTOMY, 
+                                            1, 
+                                            0),
+                                    1), 
+                             0),
+         END_age = if_else(!is.na(ENDOMETRIUM),
+                             if_else(!is.na(HYSTERECTOMY), 
+                                    if_else(ENDOMETRIUM < HYSTERECTOMY, 
+                                            ENDOMETRIUM, 
+                                            HYSTERECTOMY),
+                                    AGE_AT_LAST_NEWS), 
+                             AGE_AT_LAST_NEWS),
+         OVA_event = if_else(!is.na(OVARY),
+                             if_else(!is.na(OOPHORECTOMY), 
+                                    if_else(OVARY < OOPHORECTOMY, 
+                                            1, 
+                                            0),
+                                    1), 
+                             0),
+         OVA_age = if_else(!is.na(OVARY),
+                             if_else(!is.na(OOPHORECTOMY), 
+                                    if_else(OVARY < OOPHORECTOMY, 
+                                            OVARY, 
+                                            OOPHORECTOMY),
+                                    AGE_AT_LAST_NEWS), 
+                             AGE_AT_LAST_NEWS)
+         ) 
+
+dat_MLH1 <- dat_GRL %>% 
+   select(FAMILY_ID, PERSON_ID, SEX_recoded, FATHER_ID, MOTHER_ID, PROBAND_FLAG, MLH1_STATUS, CRC_event, CRC_age, END_event, END_age, OVA_event, OVA_age)
+
 ```
 
-What is special about using `README.Rmd` instead of just `README.md`? You can include R chunks like so:
+```{r}
+# Populational incidence data for 100,000 individuals (ref: FRANCIM 2018)
+# at age classes : 
+# [0;14] [15;19] [20;24] [25;29] [30;34] [35;39] [40;44] [45;49] [50;54] 
+# [55;59] [60;64] [65;69] [70;74] [75;79] [80;84] [85;89] [90;94] [95;+]
 
-```{r cars}
-summary(cars)
+# colorectal cancer
+
+CRCm <- c(0.3, 0.9, 1.7, 3.1, 4.9, 7.3, 12.7, 25.3, 49.8, 86.2, 136.6, 199.9, 261.8, 327.9, 414.1, 503.8, 480.3, 335.0)
+CRCf <- c(0.4, 1.7, 2.5, 3.2, 4.5, 8.3, 15.8, 27.3, 43.1, 62.8, 88.5, 121.8, 157.8, 200.9, 256.4, 315.5, 320.3, 257.5)
+
+# endometrium
+ENDm <- rep(0, 18)
+ENDf <- c(0, 0, 0.1, 0.3, 0.6, 1.4, 3.3, 8.2, 18.4, 33.4, 53.8, 77.6, 93.4, 92.6, 77.5, 57.2, 37.6, 23.2)
+
+## ovaire
+OVAm <- rep(0, 18)
+OVAf <- c(0.4, 1.1, 1.4, 1.6, 2.0, 3.1, 5.2, 8.8, 14.1, 20.8, 29.7, 40.6, 48.7, 51.2, 49.0, 43.9, 36.1, 27.4)
+
+
+Ft.compute <- function(x, ft=NULL){
+  
+  if(is.null(ft)){
+    ft <- c(0,rep(x[1],14), rep(x[2:17],each = 5), rep(x[18],26))
+  }
+  ft.smo <- smooth.spline(ft, df=15)$y
+  
+  wiout <- which(ft.smo <= 0) 
+  ft.smo[wiout] <- ft[wiout]
+  
+  Ft <- numeric(121) 
+  for(t in (2:121)){  
+    Ft[t] = Ft[t-1] + (1 - Ft[t-1])*(ft.smo[t]/100000)
+  }
+  
+  names(Ft) <- as.character(0:120)
+  Ft["0"] <- 0
+  
+  return(Ft)
+}
+
+
+Ft.CRC <- cbind("m"=Ft.compute(CRCm), "f" = Ft.compute(CRCf))
+Ft.END <- cbind("m"=Ft.compute(ENDm), "f" = Ft.compute(ENDf))
+Ft.OVA <- cbind("m"=Ft.compute(OVAm), "f" = Ft.compute(OVAf))
+
 ```
 
-You'll still need to render `README.Rmd` regularly, to keep `README.md` up-to-date. `devtools::build_readme()` is handy for this. You could also use GitHub Actions to re-render `README.Rmd` every time you push. An example workflow can be found here: <https://github.com/r-lib/actions/tree/v1/examples>.
+```{r}
+myFt <- list("CCR" = Ft.CRC, "END" = Ft.END, "OVA" = Ft.OVA)
 
-You can also embed plots, for example:
+myParams_NP <- list(
+  
+  "CRC" = list(
+    penet.model   = "np",
+    agenodes = c(30,40,50,60,70),
+    inheritance   = "dominant",
+    implic.loci   = TRUE,
+    gender.effect = TRUE),
+  
+  "END" = list(
+    penet.model   = "np",
+    agenodes = c(30,40,50,60,70),
+    inheritance   = "dominant",
+    implic.loci   = TRUE,
+    gender.effect = TRUE),
+  
+  "OVA" = list(
+    penet.model   = "np",
+    agenodes = c(30,40,50,60,70),
+    inheritance   = "dominant",
+    implic.loci   = TRUE,
+    gender.effect = TRUE)
+)
 
-```{r pressure, echo = FALSE}
-plot(pressure)
+
+# check alignement
+cbind(names(myFt),names(myParams_NP), names(dat_MLH1)[seq(8,13,2)])
+
+estim_NP <- generisk(Ft.pop = myFt,
+                          FIT.pars = myParams_NP,
+                          fA = 1/1946, 
+         # https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5336409/pdf/nihms827219.pdf
+                          DATA = as.data.frame(dat_MLH1),
+                          B = 0,
+                          multi.pheno = "all",
+                          imput_missing_age_last_news = FALSE, 
+                          ncores = 2)
+
 ```
 
-In that case, don't forget to commit and push the resulting figure files, so they display on GitHub and CRAN.
+```{r}
+plot_generisk(estim_NP)
+```
+
+```{r}
+plot_generisk(estim_NP, type ="relative")
+```
+
+```{r}
+summarize_generisk(estim_NP, ages = c(30,40,50,60,70))
+```
+
+
+Same analysis assuming a Weibull shape for the penetrance curve
+
+```{r}
+
+myParams_Weibull <- list(
+  
+  "CRC" = list(
+    penet.model   = "Weibull",
+    inheritance   = "dominant",
+    implic.loci   = TRUE,
+    gender.effect = TRUE),
+  
+  "END" = list(
+    penet.model   = "Weibull",
+    inheritance   = "dominant",
+    implic.loci   = TRUE,
+    gender.effect = TRUE),
+  
+  "OVA" = list(
+    penet.model   = "Weibull",
+    inheritance   = "dominant",
+    implic.loci   = TRUE,
+    gender.effect = TRUE)
+)
+```
+
+```{r}
+estim_Weibull <- generisk(Ft.pop = myFt,
+                          FIT.pars = myParams_Weibull,
+                          fA = 1/1946, 
+         # https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5336409/pdf/nihms827219.pdf
+                          DATA = as.data.frame(dat_MLH1),
+                          B = 0,
+                          multi.pheno = "all",
+                          imput_missing_age_last_news = FALSE, 
+                          ncores = 2)
+
+```
+```{r}
+plot_generisk(estim_Weibull)
+```
+
+```{r}
+plot_generisk(estim_Weibull, type ="relative")
+```
+
+```{r}
+summarize_generisk(estim_Weibull, ages = c(30,40,50,60,70))
+```
+
+
