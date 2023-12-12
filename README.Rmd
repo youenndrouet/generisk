@@ -27,7 +27,7 @@ The main function is `generisk()`.
 
 ## Installation
 
-You can install the development version of generisk like so:
+You can install the development version of `generisk` like so:
 
 ```r
 # install.packages("pak")
@@ -40,9 +40,15 @@ This is a basic example which shows you how to use generisk on a dataset of 236 
 
 ```{r }
 library(generisk) # load the generisk package
-library(dplyr) # load the dplyr package to manipulate the data
+```
 
-# generisk package comes with the eriscam_mlh1 dataset
+The generisk package comes with the `eriscam_mlh1` dataset. 
+First step is to format this dataset to comply with `generisk`. This data manipulation is done using the `dplyr` package.
+As you can see, sex has to be recoded 1:male, 0:female and each phenotype (in our case cancer site) must be described by an "event" variable and a "time" (age) variable, just as in any "survival-like" modeling strategy. Censoring is performed at first colonoscopy and preventive surgeries.
+
+
+```{r }
+library(dplyr) # load the dplyr package to manipulate the data
 
 dat_GRL <- eriscam_mlh1 %>%
    mutate(SEX_recoded = if_else(SEX == 1, 1, 0),
@@ -89,12 +95,21 @@ dat_GRL <- eriscam_mlh1 %>%
                                             OOPHORECTOMY),
                                     AGE_AT_LAST_NEWS), 
                              AGE_AT_LAST_NEWS)
-         ) 
+         )
 
-dat_MLH1 <- dat_GRL %>% 
-   select(FAMILY_ID, PERSON_ID, SEX_recoded, FATHER_ID, MOTHER_ID, PROBAND_FLAG, MLH1_STATUS, CRC_event, CRC_age, END_event, END_age, OVA_event, OVA_age)
+wi_colectomy <- which(!is.na(dat_GRL$TOTAL_COLECTOMY))
+dat_GRL$CRC_age[wi_colectomy] <- dat_GRL$TOTAL_COLECTOMY[wi_colectomy]
 
 ```
+
+Then we create another dataset selecting the columns required for `generisk` (warning: column order is important). 
+
+```{r }
+dat_MLH1 <- dat_GRL %>% 
+   select(FAMILY_ID, PERSON_ID, SEX_recoded, FATHER_ID, MOTHER_ID, PROBAND_FLAG, MLH1_STATUS, CRC_event, CRC_age, END_event, END_age, OVA_event, OVA_age)
+```
+
+Then, we have to compute, for each cancer site, the cumulative incidence by age. The FRANCIM incidence data are used (available at https://www.santepubliquefrance.fr/maladies-et-traumatismes/cancers/cancer-du-sein/documents/rapport-synthese/estimations-nationales-de-l-incidence-et-de-la-mortalite-par-cancer-en-france-metropolitaine-entre-1990-et-2018-volume-1-tumeurs-solides-etud).  
 
 ```{r}
 # Populational incidence data for 100,000 individuals (ref: FRANCIM 2018)
@@ -111,11 +126,14 @@ CRCf <- c(0.4, 1.7, 2.5, 3.2, 4.5, 8.3, 15.8, 27.3, 43.1, 62.8, 88.5, 121.8, 157
 ENDm <- rep(0, 18)
 ENDf <- c(0, 0, 0.1, 0.3, 0.6, 1.4, 3.3, 8.2, 18.4, 33.4, 53.8, 77.6, 93.4, 92.6, 77.5, 57.2, 37.6, 23.2)
 
-## ovaire
+## ovary
 OVAm <- rep(0, 18)
 OVAf <- c(0.4, 1.1, 1.4, 1.6, 2.0, 3.1, 5.2, 8.8, 14.1, 20.8, 29.7, 40.6, 48.7, 51.2, 49.0, 43.9, 36.1, 27.4)
+```
 
+Since `generisk` requires that incidence data are given by age (1:120) and sex. The following function transforms incidence data by age group and per 100,000 individuals into smoothed cumulative risks. Then, we create a list named `myFt` combining these cumulative risks representing the cancer risks in the French general population. 
 
+```{r}
 Ft.compute <- function(x, ft=NULL){
   
   if(is.null(ft)){
@@ -137,16 +155,42 @@ Ft.compute <- function(x, ft=NULL){
   return(Ft)
 }
 
-
 Ft.CRC <- cbind("m"=Ft.compute(CRCm), "f" = Ft.compute(CRCf))
 Ft.END <- cbind("m"=Ft.compute(ENDm), "f" = Ft.compute(ENDf))
 Ft.OVA <- cbind("m"=Ft.compute(OVAm), "f" = Ft.compute(OVAf))
 
-```
+ddinc <- tibble(age  = rep(1:80,2),
+                sexe = rep(c("f","m"), each = 80),
+                CRC = c(Ft.CRC[2:81,"f"],Ft.CRC[2:81,"m"]),
+                END = c(Ft.END[2:81,"f"],Ft.END[2:81,"m"]),
+                OVA = c(Ft.OVA[2:81,"f"],Ft.OVA[2:81,"m"])
+                )
 
-```{r}
+library(ggplot2)
+
+plotinc <- ddinc %>%
+  tidyr::gather(key = "Cancer", value = "CumPopInc", CRC, END, OVA) %>%
+  filter(CumPopInc>0) %>%
+  ggplot(aes(x = age, y = CumPopInc, color = Cancer)) +
+  geom_line() +
+  scale_y_continuous(trans = "log10")+
+  scale_color_manual(values = c(OVA = "#87CEFA",
+                                END = "#FF0000",
+                                CRC = "#00CD00"
+                                ))+
+  facet_wrap(vars(sexe)) +
+  theme_bw()
+
+plotinc
+
+
 myFt <- list("CCR" = Ft.CRC, "END" = Ft.END, "OVA" = Ft.OVA)
 
+```
+
+The next step is to define other parameters required by `generisk`. This is done through a list of parameters defined for each cancer site.      
+
+```{r}
 myParams_NP <- list(
   
   "CRC" = list(
@@ -170,37 +214,39 @@ myParams_NP <- list(
     implic.loci   = TRUE,
     gender.effect = TRUE)
 )
+```
 
+Then we run the `generisk` program using these parameters. Calculations will be performed using 4 cores. The frequency of the mutations in MLH1 in the general population is assumed to be 1/1946 (cf https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5336409/pdf/nihms827219.pdf) 
 
-# check alignement
-cbind(names(myFt),names(myParams_NP), names(dat_MLH1)[seq(8,13,2)])
-
+```{r}
 estim_NP <- generisk(Ft.pop = myFt,
                           FIT.pars = myParams_NP,
                           fA = 1/1946, 
-         # https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5336409/pdf/nihms827219.pdf
                           DATA = as.data.frame(dat_MLH1),
                           B = 0,
                           multi.pheno = "all",
                           imput_missing_age_last_news = FALSE, 
-                          ncores = 2)
-
+                          ncores = 4)
 ```
+36 iterations are required to reach a -log(LKL) of 522.37670. 
 
-```{r}
+The `plot_generisk` function is useful to see the estimated penetrance curves. 
+
+```{r fig.width = 9}
 plot_generisk(estim_NP)
 ```
 
-```{r}
+```{r fig.width = 9}
 plot_generisk(estim_NP, type ="relative")
 ```
 
+And estimations can be extracted using the `summarize_generisk` function.
 ```{r}
-summarize_generisk(estim_NP, ages = c(30,40,50,60,70))
+summarize_generisk(estim_NP, ages = c(30,50,70))
 ```
 
 
-Same analysis assuming a Weibull shape for the penetrance curve
+In the above code we do the same analysis but assuming a Weibull shape for the penetrance curve.
 
 ```{r}
 
@@ -230,24 +276,25 @@ myParams_Weibull <- list(
 estim_Weibull <- generisk(Ft.pop = myFt,
                           FIT.pars = myParams_Weibull,
                           fA = 1/1946, 
-         # https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5336409/pdf/nihms827219.pdf
                           DATA = as.data.frame(dat_MLH1),
                           B = 0,
                           multi.pheno = "all",
                           imput_missing_age_last_news = FALSE, 
-                          ncores = 2)
+                          ncores = 4)
 
 ```
-```{r}
+Only 6 iterations are needed to reach convergence, but the -log(LKL) is higher compared to previous estimation: 540.32594 indicating a lower fit to the data. 
+
+As you can see, risk estimate are quite different indicating that the shape of the curves (Weibull or non parametric using age nodes) is an important modeling choice.
+
+```{r fig.width=9}
 plot_generisk(estim_Weibull)
 ```
 
-```{r}
-plot_generisk(estim_Weibull, type ="relative")
-```
+These two models can be compared formally using a likelihood ratio test, taking into account the different numbers of parameters between the models (24p for the NP model vs 12p for the Weibull model).
 
 ```{r}
-summarize_generisk(estim_Weibull, ages = c(30,40,50,60,70))
+compareModels(estim_NP, estim_Weibull)
 ```
 
-
+This test indicates that the non parametric estimation with age nodes at 30,40,50,60,70 better fits the data compared to the Weibull model (p-value < 0.001).

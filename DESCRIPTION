@@ -12,7 +12,7 @@ Imports:
     dplyr,
     graphics,
     grDevices,
-    kinship2,
+    pedtools,
     stats,
     utils
 Depends: 

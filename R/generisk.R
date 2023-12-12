@@ -211,26 +211,44 @@ generisk <- function(
     cl <- NULL
   }
 
-  #ETAPE 0 : vérification de la cohérence des données familiales
+  # STEP 0 : checking the consistency of family data
 
-  # checkit <- checkpedigrees(famid = DATA[,1],
-  #                           id = paste(DATA[,1], DATA[,2], sep="/"),
-  #                           father.id = paste(DATA[,1], DATA[,4], sep="/"),
-  #                           mother.id = paste(DATA[,1], DATA[,5], sep="/"))
+  indexcases <- tapply(DATA_generisk[,6],DATA_generisk[,1], function(x) return(sum(x, na.rm = TRUE) == 1))
 
-  #table(checkit$split) #should be all 1's
-  #table(checkit$unrelated) #should be all 0's
-  #table(checkit$join) #should be all 0's
-  # a faire : traiter les probl?mes de boucle + ind. unrelated ...
+  if(any(!indexcases)){
+    stop("The program has stopped, all families must have one and only one index case to use generisk.")
+  }
 
-  # ETAPE 1 : modèle génétique à n loci
+  checkit <- checkpedigrees(fams =
+                              data.frame(
+                                famid = DATA_generisk[,1],
+                                id = DATA_generisk[,2],
+                                fatherid = DATA_generisk[,4],
+                                motherid = DATA_generisk[,5],
+                                sex = ifelse(DATA_generisk[,3] == 1,1,2)
+                              )
+                            )
+
+  loops <- sapply(checkit, function(x) return(x$UNBROKEN_LOOPS))
+  disconnected <- sapply(checkit, function(x) return(length(class(x))>1))
+
+  if(any(loops)){
+     stop("The program has stopped, inbreeding (consanguinity) was detected, all inbreeding loops must be removed before using generisk.")
+  }
+
+  if(any(disconnected)){
+    stop("The program has stopped, some unrelated (disconnected) individuals were detected, unrelated individuals must be removed before using generisk.")
+  }
+
+
+  # STEP 1 : Program initialization
 
   cat("  -> Program initialization. \n")
   G <- genetFor(allef=fA)
 
-  #ETAPE 2.1 : matrice des paramètres
+  # STEP 2.1 : parametrization
 
-  #intervalles de definition des pénétrances
+  # risk definition intervals
   AgeDef <- NULL
   for (cc in seq((6+nloci +2),(6+nloci + 2*ndis),2)){
     AgeDef <- c(AgeDef, list(c(min(DATA_generisk[(DATA_generisk[,cc-1] == 1) & (DATA_generisk[,cc] > 0),cc]),
@@ -316,7 +334,7 @@ generisk <- function(
   colnames(PARAMS) <- c(paste("m",PARnames, sep=":"), paste("f",PARnames, sep=":"))
   rownames(PARAMS) <- parrownames
 
-  #remove parameters corresponding to disease with risk=0 for one sex
+  # remove parameters corresponding to disease with risk=0 for one sex
   ll <- 1
   for (dis in 1:ndis){
     if(penetmodels[dis] == 1){
@@ -347,10 +365,10 @@ generisk <- function(
 
   }
 
-  #remove one genotype (wild type homozygote at all loci), because the associated risk is deduced (pop incidence)
+  # remove one genotype (wild type homozygote at all loci), because the associated risk is deduced (pop incidence)
   PARAMS[,c(1,ng+1)] <- ""
 
-  #remove the genotypes never observed in data
+  # remove the genotypes never observed in data
   POSS.genotypes <- names(table(rowPaste(DATA_generisk[,7:(7+length(fA)-1)])))
   POSS.genotypes <- c(paste("m",POSS.genotypes, sep=":"), paste("f",POSS.genotypes, sep=":"))
   for (k in 1:ncol(PARAMS)) if(!(colnames(PARAMS)[k] %in% POSS.genotypes)) PARAMS[,k] <- ""
@@ -364,7 +382,7 @@ generisk <- function(
 
   for (k in 1:length(parameters)) PARAMS.mask[PARAMS == parameters[k]] <- k
 
-  # ETAPE 2.2 : calculs preliminaires sur les donn?es familiales (pour ne pas refaire ces calculs dans la boucle d'optimisation et de bootstrap)
+  # STEP 2.2 : preliminary calculations on family data (to avoid repeating these calculations in the optimization and bootstrap loop)
 
   cat("  -> Pre-calculations to speed-up likelihood algorithm. \n")
   fids  <- unique(DATA_generisk[,1])
@@ -531,7 +549,7 @@ generisk <- function(
   cat("  -> ML optimization by nlminb. \n")
   fit <- nlminb(start = pars.init,  # ETAPES 3 et 4
                 objective = function(x) nloglik(x,
-                                                write_lklbyfam = FALSE,
+                                                return_lklbyfam = FALSE,
                                                 cl = cl,
                                                 'G' = G,
                                                 'X' = X,
@@ -548,7 +566,7 @@ generisk <- function(
 
   fta <- array(ftvproc(x = fit$par, args = list('Ft.pop' = Ft.pop, 'FIT.pars' = FIT.pars, 'approxFt.aa' = approxFt.aa, 'approx.np' = approx.np, 'PARAMS.mask' = PARAMS.mask, 'G' =G)), dim=c(121,2,ndis,ng))
 
-  nloglik(fit$par, write_lklbyfam = TRUE, cl = cl, 'G' =G, 'X' = X, 'Ft.pop' = Ft.pop, 'LIK.method' = LIK.method, 'FIT.pars' = FIT.pars, 'approxFt.aa' = approxFt.aa, 'approx.np' = approx.np, 'PARAMS.mask' = PARAMS.mask, 'penetmodels' = penetmodels)
+  lklbyfam <- nloglik(fit$par, return_lklbyfam = TRUE, cl = cl, 'G' =G, 'X' = X, 'Ft.pop' = Ft.pop, 'LIK.method' = LIK.method, 'FIT.pars' = FIT.pars, 'approxFt.aa' = approxFt.aa, 'approx.np' = approx.np, 'PARAMS.mask' = PARAMS.mask, 'penetmodels' = penetmodels)
 
   if(B > 0){
 
@@ -591,7 +609,7 @@ generisk <- function(
 
       fit.boot <- nlminb(start = pars.init,
                          objective = function(x) nloglik(x,
-                                                         write_lklbyfam = FALSE,
+                                                         return_lklbyfam = FALSE,
                                                          cl = cl,
                                                          'G' = G,
                                                          'X' = X.boot,
@@ -617,6 +635,7 @@ generisk <- function(
     out <- list("fit" = c(fit,
                           "paramsmask" = list(PARAMS.mask),
                           "ft" = list(fta)),
+                "lklbyfam" = lklbyfam,
                 "boot" = list("fit.boot" = RESboot,
                               "ft.boot" = ftaboot),
                 "params" = list("Ft.pop" = Ft.pop,
@@ -636,6 +655,7 @@ generisk <- function(
     out <- list("fit" = c(fit,
                           "paramsmask" = list(PARAMS.mask),
                           "ft" = list(fta)),
+                "lklbyfam" = lklbyfam,
                 "params" = list("Ft.pop" = Ft.pop,
                                 'approx.np' = approx.np,
                                 "FIT.pars" = FIT.pars,

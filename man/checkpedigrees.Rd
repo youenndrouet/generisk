@@ -2,24 +2,18 @@
 % Please edit documentation in R/checkpedigrees.R
 \name{checkpedigrees}
 \alias{checkpedigrees}
-\title{function largely inspired from the "familycheck" fct of the Kinship package}
+\title{function checking the consistency of family data with help of the pedtools::ped() function}
 \usage{
-checkpedigrees(famid, id, father.id, mother.id)
+checkpedigrees(fams)
 }
 \arguments{
-\item{famid}{family identification number (vector)}
-
-\item{id}{individual identification number (vector)}
-
-\item{father.id}{father id}
-
-\item{mother.id}{mother id}
+\item{fams}{a dataframe with columns famid, id, fatherid, motherid, sex}
 }
 \value{
 to be completed
 }
 \description{
-function largely inspired from the "familycheck" fct of the Kinship package
+function checking the consistency of family data with help of the pedtools::ped() function
 }
 \examples{
 #to be completed

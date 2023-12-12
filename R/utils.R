@@ -67,15 +67,6 @@ bootfam <- function(x, n=NULL){
 
 constrain1 <- function(x) ifelse(x>1,1,x)
 
-compareModels <- function(x1,x2){
-  nlkl1 <- x1$fit$objective
-  nlkl2 <- x2$fit$objective
-  npar1 <- length(x1$fit$par)
-  npar2 <- length(x2$fit$par)
-  lr <- 2*abs(nlkl1 - nlkl2)
-  pvalue <- 1-pchisq(lr,df=abs(npar2-npar1))
-  return(list('lr'=lr,'pvalue' = pvalue))
-}
 
 
 

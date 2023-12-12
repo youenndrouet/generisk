@@ -2,7 +2,7 @@
 #' Title
 #'
 #' @param x parameters of the penetrance curve
-#' @param write_lklbyfam write a csv file with LKL by family
+#' @param return_lklbyfam return a table with LKL by family
 #' @param cl cluster object for parallel computing
 #' @param ... internal args
 #'
@@ -13,11 +13,11 @@
 #'
 #' @importFrom utils write.table
 
-nloglik <- function(x, write_lklbyfam = FALSE, cl = NULL, ...){
+nloglik <- function(x, return_lklbyfam = FALSE, cl = NULL, ...){
 
   args  <- list(...)
 
-  # ETAPE 3 : calcul de(s) fonction(s) de risque(s) a partir des parametres de(s) modele(s) maladie(s)
+  # STEP 3 : calculation of risk function(s) from disease model(s) parameters
   if('ftv' %in% names(args)){
     ftv <- args$ftv
   }else{
@@ -25,7 +25,7 @@ nloglik <- function(x, write_lklbyfam = FALSE, cl = NULL, ...){
   }
 
 
-  # ETAPE 4 : calcul de la vraisemblance par l'algo d'Elston-Stewart
+  # STEP 4 : likelihood calculation using the Elston-Stewart algo
 
   loglikbyfam <- matrix(0, nrow=length(args$X), ncol=3)
   rownames(loglikbyfam) <- names(args$X)
@@ -52,15 +52,15 @@ nloglik <- function(x, write_lklbyfam = FALSE, cl = NULL, ...){
 
     }
 
-    if(write_lklbyfam){
-      write.table(loglikbyfam, "loglikbyfam.csv", sep = ";")
-      cat('\n',"The GRL log-likelihood per family (-LKL) is written in 'loglikbyfam.csv' file at your current workspace.\n")
+    if(return_lklbyfam){
+      return(loglikbyfam)
+    }else{
+      return(-sum(loglikbyfam[,"mLKL_GRL"]))
     }
 
 
   }
 
-  return(-sum(loglikbyfam[,"mLKL_GRL"]))
 
 }
 
