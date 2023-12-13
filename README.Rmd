@@ -123,60 +123,69 @@ CRCm <- c(0.3, 0.9, 1.7, 3.1, 4.9, 7.3, 12.7, 25.3, 49.8, 86.2, 136.6, 199.9, 26
 CRCf <- c(0.4, 1.7, 2.5, 3.2, 4.5, 8.3, 15.8, 27.3, 43.1, 62.8, 88.5, 121.8, 157.8, 200.9, 256.4, 315.5, 320.3, 257.5)
 
 # endometrium
-ENDm <- rep(0, 18)
 ENDf <- c(0, 0, 0.1, 0.3, 0.6, 1.4, 3.3, 8.2, 18.4, 33.4, 53.8, 77.6, 93.4, 92.6, 77.5, 57.2, 37.6, 23.2)
 
 ## ovary
-OVAm <- rep(0, 18)
 OVAf <- c(0.4, 1.1, 1.4, 1.6, 2.0, 3.1, 5.2, 8.8, 14.1, 20.8, 29.7, 40.6, 48.7, 51.2, 49.0, 43.9, 36.1, 27.4)
 ```
 
-Since `generisk` requires that incidence data are given by age (1:120) and sex. The following function transforms incidence data by age group and per 100,000 individuals into smoothed cumulative risks. Then, we create a list named `myFt` combining these cumulative risks representing the cancer risks in the French general population. 
+Since `generisk` requires that incidence data are given by age (1:120) and sex. The following code transforms incidence data by age group and per 100,000 individuals into smoothed cumulative risks. Then, we create a list named `myFt` combining these cumulative risks representing the cancer risks in the French general population. 
 
 ```{r}
-Ft.compute <- function(x, ft=NULL){
-  
-  if(is.null(ft)){
-    ft <- c(0,rep(x[1],14), rep(x[2:17],each = 5), rep(x[18],26))
-  }
-  ft.smo <- smooth.spline(ft, df=15)$y
-  
-  wiout <- which(ft.smo <= 0) 
-  ft.smo[wiout] <- ft[wiout]
-  
-  Ft <- numeric(121) 
-  for(t in (2:121)){  
-    Ft[t] = Ft[t-1] + (1 - Ft[t-1])*(ft.smo[t]/100000)
-  }
-  
-  names(Ft) <- as.character(0:120)
-  Ft["0"] <- 0
-  
-  return(Ft)
+
+rates_by1year_0to120 <- function(rates_byclasses){
+    out <- c(0, # rates at age = 0 is 0
+             rep(rates_byclasses[1],14), # ages = 1 to 14 
+             rep(rates_byclasses[2:17],each = 5), # 5-year age classes from 15 to 94
+             rep(rates_byclasses[18],26) # ages = 95 to 120  
+             )
+    return(out)
 }
 
-Ft.CRC <- cbind("m"=Ft.compute(CRCm), "f" = Ft.compute(CRCf))
-Ft.END <- cbind("m"=Ft.compute(ENDm), "f" = Ft.compute(ENDf))
-Ft.OVA <- cbind("m"=Ft.compute(OVAm), "f" = Ft.compute(OVAf))
+CRCm.rates <- rates_by1year_0to120(CRCm)
+CRCf.rates <- rates_by1year_0to120(CRCf)
+OVAf.rates <- rates_by1year_0to120(OVAf)
+ENDf.rates <- rates_by1year_0to120(ENDf)
+
+Ft.CRC.smo <- cbind("m"=Ft_compute(CRCm.rates), "f" = Ft_compute(CRCf.rates))
+Ft.END.smo <- cbind("m"=rep(0,121), "f" = Ft_compute(ENDf.rates))
+Ft.OVA.smo <- cbind("m"=rep(0,121), "f" = Ft_compute(OVAf.rates))
+
+Ft.CRC <- cbind("m"=Ft_compute(CRCm.rates, smo = FALSE), "f" = Ft_compute(CRCf.rates, smo = FALSE))
+Ft.END <- cbind("m"=rep(0,121), "f" = Ft_compute(ENDf.rates, smo = FALSE))
+Ft.OVA <- cbind("m"=rep(0,121), "f" = Ft_compute(OVAf.rates, smo = FALSE))
 
 ddinc <- tibble(age  = rep(1:80,2),
                 sexe = rep(c("f","m"), each = 80),
                 CRC = c(Ft.CRC[2:81,"f"],Ft.CRC[2:81,"m"]),
                 END = c(Ft.END[2:81,"f"],Ft.END[2:81,"m"]),
-                OVA = c(Ft.OVA[2:81,"f"],Ft.OVA[2:81,"m"])
+                OVA = c(Ft.OVA[2:81,"f"],Ft.OVA[2:81,"m"]),
+                CRC.smo = c(Ft.CRC.smo[2:81,"f"],Ft.CRC.smo[2:81,"m"]),
+                END.smo = c(Ft.END.smo[2:81,"f"],Ft.END.smo[2:81,"m"]),
+                OVA.smo = c(Ft.OVA.smo[2:81,"f"],Ft.OVA.smo[2:81,"m"])
                 )
 
 library(ggplot2)
 
 plotinc <- ddinc %>%
-  tidyr::gather(key = "Cancer", value = "CumPopInc", CRC, END, OVA) %>%
+  tidyr::gather(key = "Cancer", value = "CumPopInc", CRC, END, OVA, CRC.smo, END.smo, OVA.smo) %>%
   filter(CumPopInc>0) %>%
-  ggplot(aes(x = age, y = CumPopInc, color = Cancer)) +
+  ggplot(aes(x = age, y = CumPopInc, color = Cancer, linetype = Cancer)) +
   geom_line() +
   scale_y_continuous(trans = "log10")+
   scale_color_manual(values = c(OVA = "#87CEFA",
                                 END = "#FF0000",
-                                CRC = "#00CD00"
+                                CRC = "#00CD00",
+                                OVA.smo = "#87CEFA",
+                                END.smo = "#FF0000",
+                                CRC.smo = "#00CD00"
+                                ))+
+  scale_linetype_manual(values = c(OVA = 1,
+                                END = 1,
+                                CRC = 1,
+                                OVA.smo = 4,
+                                END.smo = 4,
+                                CRC.smo = 4
                                 ))+
   facet_wrap(vars(sexe)) +
   theme_bw()
@@ -184,7 +193,7 @@ plotinc <- ddinc %>%
 plotinc
 
 
-myFt <- list("CCR" = Ft.CRC, "END" = Ft.END, "OVA" = Ft.OVA)
+myFt <- list("CCR" = Ft.CRC.smo, "END" = Ft.END.smo, "OVA" = Ft.OVA.smo)
 
 ```
 
