@@ -51,7 +51,11 @@ plot_generisk <- function(x,
   ncurves <- 1
 
   if(legendloc == "right"){
-    marg <- c(5,6,5,20)
+    if(small_labels){
+      marg <- c(5,5,5,7)
+    }else{
+      marg <- c(5,6,5,20)
+    }
   }else{
     marg <- c(5,4,4,1)
     TEXTleg <- NULL
