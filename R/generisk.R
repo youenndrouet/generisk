@@ -232,12 +232,20 @@ generisk <- function(
   loops <- sapply(checkit, function(x) return(x$UNBROKEN_LOOPS))
   disconnected <- sapply(checkit, function(x) return(length(class(x))>1))
 
-  if(any(loops)){
-     stop("The program has stopped, inbreeding (consanguinity) was detected, all inbreeding loops must be removed before using generisk.")
+  if(any(disconnected)){
+
+    cat("Some unrelated (disconnected) individuals were detected in families: \n",
+        paste(names(disconnected)[disconnected], collapse = ", "), "\n",
+        "Unrelated individuals must be removed before using generisk.", "\n")
+    stop("The program has stopped")
   }
 
-  if(any(disconnected)){
-    stop("The program has stopped, some unrelated (disconnected) individuals were detected, unrelated individuals must be removed before using generisk.")
+  if(any(loops)){
+
+    cat("inbreeding (consanguinity) was detected: \n",
+        paste(names(loops)[loops], collapse = ", "), "\n",
+        "All inbreeding loops must be removed before using generisk.", "\n")
+     stop("The program has stopped")
   }
 
 
