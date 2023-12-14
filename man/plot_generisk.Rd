@@ -17,7 +17,8 @@ plot_generisk(
   legendtext = NULL,
   cols = rep(c("#87CEFA", "#FF0000", "#00CD00", "#00CED1", "#E9967A", "#006400",
     "#FF8C00", "#00008B", "#8B008B", "#008B8B"), 3),
-  main = ""
+  main = "",
+  small_labels = TRUE
 )
 }
 \arguments{
@@ -44,6 +45,8 @@ plot_generisk(
 \item{cols}{colors}
 
 \item{main}{main title of the graph}
+
+\item{small_labels}{logical, small or large labels for penetrance curves}
 }
 \value{
 to be completed

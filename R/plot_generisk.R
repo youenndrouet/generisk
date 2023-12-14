@@ -12,6 +12,7 @@
 #' @param legendtext text of the legend
 #' @param cols colors
 #' @param main main title of the graph
+#' @param small_labels logical, small or large labels for penetrance curves
 #'
 #' @import graphics
 #' @importFrom stats qnorm
@@ -40,7 +41,8 @@ plot_generisk <- function(x,
                                      "#00CED1","#E9967A","#006400",
                                      "#FF8C00","#00008B","#8B008B",
                                      "#008B8B"),3),
-                          main = ""){
+                          main = "",
+                          small_labels = TRUE){
 
   is.bootstrap <- ('boot' %in% names(x))
   qn <- qnorm(1-(1-conf)/2)
@@ -112,8 +114,7 @@ plot_generisk <- function(x,
     for (cc in match(paramll, mask[ll,])){
 
       labcurve  <- paste(disname, paste(colnames(mask)[which(mask[ll,cc] == mask[ll,])], collapse="/"),sep=": ")
-      colk <- ncurves
-
+      colk      <- ncurves
       Ft        <- x$fit$ft[,sexe[cc],dis,geno[cc]][seqx + 1]
       Ftpop     <- x$fit$ft[,sexe[cc],dis,1][seqx + 1]
       Ft.all    <- x$fit$ft[,sexe[cc],dis,geno[cc]][seqx.all + 1]
@@ -182,7 +183,12 @@ plot_generisk <- function(x,
         }
 
         if(is.null(legendtext)){
-          textleg <- paste(labcurve,paste('(',penetmod,')',sep=""), sep=' ')
+          if(small_labels){
+            textleg <- labcurve
+          }else{
+            textleg <- paste(labcurve,paste('(',penetmod,')',sep=""), sep=' ')
+          }
+
         }else{
           textleg <- legendtext[colk]
         }
@@ -220,7 +226,11 @@ plot_generisk <- function(x,
         }
 
         if(is.null(legendtext)){
-          textleg <- paste(labcurve,paste('(',penetmod,')',sep=""), sep=' ')
+          if(small_labels){
+            textleg <- labcurve
+          }else{
+            textleg <- paste(labcurve,paste('(',penetmod,')',sep=""), sep=' ')
+          }
         }else{
           textleg <- legendtext[colk]
         }
@@ -233,7 +243,7 @@ plot_generisk <- function(x,
                 col=cols[colk],
                 cex=0.8)
         }else{
-          TEXTleg <- c(TEXTleg,textleg)
+          TEXTleg <- c(TEXTleg, textleg)
         }
 
         abline(h=1,lty=2)
