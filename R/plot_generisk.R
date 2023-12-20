@@ -32,7 +32,7 @@ plot_generisk <- function(x,
                           conf = 0.95,
                           add = FALSE,
                           multiple = FALSE,
-                          ymax = 1,
+                          ymax = ifelse(type == "absolute", 1, 1e4),
                           xmax = 100,
                           allcurves = FALSE,
                           legendloc = "right",
@@ -276,7 +276,7 @@ empty.plot <- function(type="absolute", ymax, xmax, marg, main){
     axis(2,lwd=1,col = gray(.7), at = seq(0,1,0.1), labels=seq(0,1,0.1)*100)
     title(ylab="",main="Cumulative risk (%)", cex.lab = 1.3)
   }else{
-    plot(NA,NA, type="n", xlim=c(0,xmax), ylim=c(0.1,100000), log="y", xlab="", ylab ="", bty="n",axes=FALSE)
+    plot(NA,NA, type="n", xlim=c(0,xmax), ylim=c(0.1,ymax), log="y", xlab="", ylab ="", bty="n",axes=FALSE)
     abline(h = c(seq(0.2,0.9,0.1),
                  seq(2,9,1),
                  seq(20,90,10),

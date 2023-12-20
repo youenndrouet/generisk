@@ -23,8 +23,8 @@ summarize_generisk <- function(x,
   is.bootstrap <- ('boot' %in% names(x))
   qn <- qnorm(1-(1-conf)/2)
 
-  TAB.absolute <- NULL
-  TAB.relative <- NULL
+  TAB.absolute <- tab.absolute <- NULL
+  TAB.relative <- tab.relative <- NULL
 
   mask  <- x$fit$paramsmask
 
@@ -99,13 +99,23 @@ summarize_generisk <- function(x,
 
       if(!is.bootstrap){
 
-        TAB.absolute <- rbind(TAB.absolute, c(paste(labcurve,paste('(',penetmod,')',sep=""), sep=' '), round(Ft.all[as.character(ages)]*100,1)))
+        tab.absolute <- rbind(tab.absolute, c(paste(labcurve,paste('(',penetmod,')',sep=""), sep=' '), round(Ft.all[as.character(ages)]*100,1)))
+
+        TAB.absolute <- rbind(TAB.absolute, data.frame("outcome" = paste(labcurve,paste('(',penetmod,')',sep=""), sep=' '),
+                                                       "age" = ages,
+                                                       "abs_risk" = Ft.all[as.character(ages)]))
 
       }else{
 
         icaa <- paste(round(tra.all['qlo',as.character(ages)]*100,1), round(tra.all['qup',as.character(ages)]*100,1), sep='-')
         stat <- paste(round(tra.all["median",as.character(ages)]*100,1)," (",icaa,")",sep="")
-        TAB.absolute <- rbind(TAB.absolute,c(paste(labcurve,paste('(',penetmod,')',sep=""), sep=' '),stat ))
+        tab.absolute <- rbind(tab.absolute,c(paste(labcurve,paste('(',penetmod,')',sep=""), sep=' '),stat ))
+
+        TAB.absolute <- rbind(TAB.absolute, data.frame("outcome" = paste(labcurve,paste('(',penetmod,')',sep=""), sep=' '),
+                                                       "age" = ages,
+                                                       "median_abs_risk" =  tra.all["median",as.character(ages)],
+                                                       "lower_abs_risk" = tra.all['qlo',as.character(ages)],
+                                                       "upper_abs_risk" = tra.all['qup',as.character(ages)]))
 
       }
 
@@ -115,9 +125,20 @@ summarize_generisk <- function(x,
       if(is.bootstrap){
           icaa <- paste(round((tra.all['qlo',]/Ftpop.all)[as.character(ages)],1), round((tra.all['qup',]/Ftpop.all)[as.character(ages)],1), sep='-')
           stat <- paste(round((tra.all["median",]/Ftpop.all)[as.character(ages)],1)," (",icaa,")",sep="")
-          TAB.relative <- rbind(TAB.relative,c(paste(labcurve,paste('(',penetmod,')',sep=""), sep=' '),stat ))
+          tab.relative <- rbind(tab.relative,c(paste(labcurve,paste('(',penetmod,')',sep=""), sep=' '),stat ))
+          TAB.relative <- rbind(TAB.relative, data.frame("outcome" = paste(labcurve,paste('(',penetmod,')',sep=""), sep=' '),
+                                                         "age" = ages,
+                                                         "median_relative_risk" = (tra.all["median",]/Ftpop.all)[as.character(ages)],
+                                                         "lower_relative_risk" = (tra.all['qlo',]/Ftpop.all)[as.character(ages)],
+                                                         "upper_relative_risk" = (tra.all['qup',]/Ftpop.all)[as.character(ages)]))
+
+
       }else{
-          TAB.relative <- rbind(TAB.relative,c(paste(labcurve,paste('(',penetmod,')',sep=""), sep=' '), round((Ft.all/Ftpop.all)[as.character(ages)],1)))
+          tab.relative <- rbind(tab.relative,c(paste(labcurve,paste('(',penetmod,')',sep=""), sep=' '), round((Ft.all/Ftpop.all)[as.character(ages)],1)))
+          TAB.relative <- rbind(TAB.relative, data.frame("outcome" = paste(labcurve,paste('(',penetmod,')',sep=""), sep=' '),
+                                                         "age" = ages,
+                                                         "relative_risk" = (Ft.all/Ftpop.all)[as.character(ages)]))
+
       }
 
     }
@@ -125,7 +146,7 @@ summarize_generisk <- function(x,
     dis <- dis - 1
   }
 
-  colnames(TAB.absolute) <- colnames(TAB.relative) <- c("strata", paste0("Age=",ages))
+  colnames(tab.absolute) <- colnames(tab.relative) <- c("strata", paste0("Age=",ages))
 
   cat('\n')
   cat('Model overall statistics: \n', lab, '\n')
@@ -133,7 +154,9 @@ summarize_generisk <- function(x,
   cat('\n')
   cat('Estimated risks: \n')
 
-  return(list("ABSOLUTE_CUM_RISKS" = TAB.absolute,
-              "RELATIVE_CUM_RISKS" = TAB.relative))
+  return(list("ABSOLUTE_CUM_RISKS" = tab.absolute,
+              "RELATIVE_CUM_RISKS" = tab.relative,
+              "TAB_data_abs" = TAB.absolute,
+              "TAB_data_relative" = TAB.relative))
 
 }

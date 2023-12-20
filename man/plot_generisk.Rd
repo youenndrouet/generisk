@@ -10,7 +10,7 @@ plot_generisk(
   conf = 0.95,
   add = FALSE,
   multiple = FALSE,
-  ymax = 1,
+  ymax = ifelse(type == "absolute", 1, 10000),
   xmax = 100,
   allcurves = FALSE,
   legendloc = "right",
