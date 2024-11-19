@@ -18,14 +18,11 @@
 #' @param approx.np linear or spline
 #' @param multi.pheno strategy in case of multiple diseases (can be "first" or "all")
 #' @param ncores number of cores used for parallel computing
-#' @param imput_missing_age_last_news logical: imputation of missing ages at last news ?
 #'
 #' @import parallel
 #' @importFrom stats runif
 #' @importFrom stats nlminb
 #' @importFrom stats na.omit
-#' @importFrom utils txtProgressBar
-#' @importFrom utils setTxtProgressBar
 #' @importFrom utils packageVersion
 #' @importFrom dplyr bind_rows
 #'
@@ -58,8 +55,7 @@ generisk <- function(
   approx.np = "spline",
   multi.pheno = "all",
   init.weibull = NULL,
-  ncores = 1,                   # number of cores (default = 1)
-  imput_missing_age_last_news = FALSE
+  ncores = 1     # number of cores (default = 1)
 ){
 
   minrisk = 1e-16   #default minimum absolute risk is almost 0 (prevent singularities)
@@ -176,15 +172,15 @@ generisk <- function(
 
   wi_to_impute <- which(is.na(DATA_generisk[,cc_ages[1]]))
 
-  if(imput_missing_age_last_news){
-    ## replace with median age at last news for unaff
-    DATA_generisk[wi_to_impute, cc_ages] <- median(minages_unaff, na.rm = TRUE)
-    cat('   -', "Unaffected individuals: missing age at last news imputed for", length(wi_to_impute),"/",length(wi_unaff), "individuals", "\n")
-  }else{
+  # if(imput_missing_age_last_news){
+  #   ## replace with median age at last news for unaff
+  #   DATA_generisk[wi_to_impute, cc_ages] <- median(minages_unaff, na.rm = TRUE)
+  #   cat('   -', "Unaffected individuals: missing age at last news imputed for", length(wi_to_impute),"/",length(wi_unaff), "individuals", "\n")
+  # }else{
     ## replace NA by O
     DATA_generisk[wi_to_impute, cc_ages] <- 0
     cat('   -', "Unaffected individuals:", length(wi_to_impute),"/",length(wi_unaff), " individuals with missing age at last news removed from analysis (age --> 0)", "\n")
-  }
+  # }
 
   cat('\n')
 
@@ -252,7 +248,6 @@ generisk <- function(
   # STEP 1 : Program initialization
 
   cat("  -> Program initialization. \n")
-  G <- genetFor(allef=fA)
 
   # STEP 2.1 : parametrization
 
@@ -330,7 +325,6 @@ generisk <- function(
         PARAMS <- rbind(PARAMS,paste(dis,"HR",PARAM,sep=":"))
         parrownames <- c(parrownames, paste(disname,"HR", sep=":"))
       }else{ #np
-
         agenodes <- FIT.pars[[dis]]$agenodes
         aa <- c(agenodes,120)
         PARAMS <- rbind(PARAMS, matrix(paste(dis,rep(aa, each = length(PARAM)),PARAM,sep=":"), ncol=length(PARAM), byrow=TRUE))
@@ -386,9 +380,21 @@ generisk <- function(
                         nrow = nrow(PARAMS),
                         dimnames = list(rownames(PARAMS),colnames(PARAMS)))
 
-  parameters <- unique(as.vector(PARAMS[PARAMS != ""]))
+  #parameters <- unique(as.vector(PARAMS[PARAMS != ""]))
+
+  #PARAMS_transposed <- t(PARAMS)
+  #parameters <- unique(PARAMS_transposed[PARAMS_transposed != ""])
+
+  parameters <- NULL
+  for (dis in names(FIT.pars)){
+    PARAMS_disi <- PARAMS[grep(dis, rownames(PARAMS)),]
+    parameters_disi <- unique(as.vector(PARAMS_disi[PARAMS_disi != ""]))
+    parameters <- c(parameters, parameters_disi)
+  }
 
   for (k in 1:length(parameters)) PARAMS.mask[PARAMS == parameters[k]] <- k
+
+  G <- genetFor(allef=fA)
 
   # STEP 2.2 : preliminary calculations on family data (to avoid repeating these calculations in the optimization and bootstrap loop)
 
@@ -576,104 +582,41 @@ generisk <- function(
 
   lklbyfam <- nloglik(fit$par, return_lklbyfam = TRUE, cl = cl, 'G' =G, 'X' = X, 'Ft.pop' = Ft.pop, 'LIK.method' = LIK.method, 'FIT.pars' = FIT.pars, 'approxFt.aa' = approxFt.aa, 'approx.np' = approx.np, 'PARAMS.mask' = PARAMS.mask, 'penetmodels' = penetmodels)
 
+
+  out <- list("fit" = c(fit,
+                        "paramsmask" = list(PARAMS.mask),
+                        "ft" = list(fta)),
+              "lklbyfam" = lklbyfam,
+              "params" = list("Ft.pop" = Ft.pop,
+                              'approx.np' = approx.np,
+                              "FIT.pars" = FIT.pars,
+                              "LIK.method" = LIK.method,
+                              "fA" = fA,
+                              "rel.tol" = rel.tol,
+                              "rel.tol.boot" = rel.tol.boot,
+                              "AgeDef" = AgeDef,
+                              'pars.init' = pars.init,
+                              'approxFt.aa' = approxFt.aa,
+                              'penetmodels' = penetmodels,
+                              'pars.lower' = pars.lower,
+                              'pars.upper' = pars.upper),
+              "X" = X,
+              "G" = G,
+              "DATA_generisk" = DATA_generisk)
+
   if(B > 0){
 
-    cat("\n  -> Bootstrap analysis for Confidence Intervals \n")
-    pb <- txtProgressBar(char = "*", style =3)
-    Sys.sleep(0.1)
-    RESboot <- NULL
-    ftaboot <- NULL
+    if(!is.null(cl)){stopCluster(cl)}
 
-    for (b in seq(B)){
+    out <- bootstrap_generisk(generisk_obj = out,
+                                  B = B,
+                                  ncores = ncores)
 
-      if(!imput_missing_age_last_news){
-
-        # directly use the pre-computed X object
-        X.boot <- bootfam(X)
-
-      }else{
-
-        # have to re-compute from DATA_generisk_before_imputed_step
-        fids.boot <- sample(fids, replace = TRUE)
-        DATA_generisk.boot <- lapply(fids.boot, FUN=function(f) DATA_generisk_before_imputed_step[DATA_generisk_before_imputed_step[,1] == f,][,-1])
-
-        # numfam is changed to fix the case of families selected multiple times..
-        DATA_generisk.boot <- bind_rows(DATA_generisk.boot, .id = "fid")
-
-        # imputation of missing ages
-        wi_to_impute.boot <- which(is.na(DATA_generisk.boot[,cc_ages[1]]))
-        n_to_impute <- length(wi_to_impute.boot)
-        ages_imputed <- sample(x = na.omit(minages_unaff), size = n_to_impute, replace = TRUE)
-
-        for (cc in cc_ages){DATA_generisk.boot[wi_to_impute.boot, cc] <- ages_imputed}
-
-        ## pré-calculs pour FORTRAN
-        fids.boot  <- unique(DATA_generisk.boot$fid)
-        X.boot <- lapply(fids.boot, function(f) preprocFor(ped = DATA_generisk.boot[DATA_generisk.boot$fid==f,-1],allef=fA, ndis=ndis))
-        names(X.boot) <- fids.boot
-
-      }
-
-
-      fit.boot <- nlminb(start = pars.init,
-                         objective = function(x) nloglik(x,
-                                                         return_lklbyfam = FALSE,
-                                                         cl = cl,
-                                                         'G' = G,
-                                                         'X' = X.boot,
-                                                         'Ft.pop' = Ft.pop,
-                                                         'LIK.method' = LIK.method,
-                                                         'FIT.pars' = FIT.pars,
-                                                         'approxFt.aa' = approxFt.aa,
-                                                         'approx.np' = approx.np,
-                                                         'PARAMS.mask' = PARAMS.mask,
-                                                         'penetmodels' = penetmodels),
-                         lower = pars.lower,
-                         upper = pars.upper,
-                         control = list(trace=10, rel.tol = rel.tol.boot))
-
-      ftab <- array(ftvproc(x = fit.boot$par, args = list('Ft.pop' = Ft.pop, 'FIT.pars' = FIT.pars, 'approxFt.aa' = approxFt.aa,'approx.np' = approx.np, 'PARAMS.mask' = PARAMS.mask, 'G' =G)), dim=c(121,2,ndis,ng))
-      ftaboot <- c(ftaboot,list(ftab))
-      RESboot <- rbind(RESboot,c(convergence = fit.boot$convergence, fit.boot$par, nloglik = fit.boot$objective))
-      setTxtProgressBar(pb, b/B)
-    }
-    close(pb)
-    cat("\n  job done !\n")
-
-    out <- list("fit" = c(fit,
-                          "paramsmask" = list(PARAMS.mask),
-                          "ft" = list(fta)),
-                "lklbyfam" = lklbyfam,
-                "boot" = list("fit.boot" = RESboot,
-                              "ft.boot" = ftaboot),
-                "params" = list("Ft.pop" = Ft.pop,
-                                'approx.np' = approx.np,
-                                "FIT.pars" = FIT.pars,
-                                "LIK.method" = LIK.method,
-                                "fA" = fA,
-                                "rel.tol" = rel.tol,
-                                "AgeDef" = AgeDef),
-                "X" = X,
-                "G" = G,
-                "DATA_generisk" = DATA_generisk)
 
   }else{
 
     cat("\n  job done !\n")
-    out <- list("fit" = c(fit,
-                          "paramsmask" = list(PARAMS.mask),
-                          "ft" = list(fta)),
-                "lklbyfam" = lklbyfam,
-                "params" = list("Ft.pop" = Ft.pop,
-                                'approx.np' = approx.np,
-                                "FIT.pars" = FIT.pars,
-                                "LIK.method" = LIK.method,
-                                "fA" = fA,
-                                "rel.tol" = rel.tol,
-                                "AgeDef" = AgeDef),
-                "X" = X,
-                "G" = G,
-                "DATA_generisk" = DATA_generisk)
+
   }
 
   if(!is.null(cl)){stopCluster(cl)}

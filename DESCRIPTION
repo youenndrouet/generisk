@@ -1,13 +1,13 @@
 Package: generisk
 Title: Estimation of the Genotype Restricted Likelihood (GRL) from family data 
-Version: 0.1.0
+Version: 0.1.1
 Author: Youenn Drouet
 Maintainer: Youenn Drouet <youenn.drouet@lyon.unicancer.fr>
 Description: Estimation of the Genotype Restricted Likelihood (GRL) from family data. 
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.2.3
+RoxygenNote: 7.3.2
 Imports: 
     dplyr,
     graphics,

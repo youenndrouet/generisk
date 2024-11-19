@@ -69,12 +69,24 @@ summarize_generisk <- function(x,
 
     for (cc in match(paramll, mask[ll,])){
 
-      labcurve  <- paste(disname, paste(colnames(mask)[which(mask[ll,cc] == mask[ll,])], collapse="/"),sep=": ")
+      mask_matched <- which(mask[ll,cc] == mask[ll,])
+
+      labcurve  <- paste(disname, paste(colnames(mask)[mask_matched], collapse="/"),sep=": ")
 
       Ft        <- x$fit$ft[,sexe[cc],dis,geno[cc]][seqx + 1]
-      Ftpop     <- x$fit$ft[,sexe[cc],dis,1][seqx + 1]
+
+      if(length(unique(sexe[mask_matched]))==2){
+        # 1 parameter for both sex
+        Ftpop     <- rowMeans(x$fit$ft[,,dis,1])[seqx + 1]
+        Ftpop.all <- rowMeans(x$fit$ft[,,dis,1])[seqx.all + 1]
+
+      }else{
+        Ftpop     <- x$fit$ft[,sexe[cc],dis,1][seqx + 1]
+        Ftpop.all <- x$fit$ft[,sexe[cc],dis,1][seqx.all + 1]
+      }
+
+
       Ft.all    <- x$fit$ft[,sexe[cc],dis,geno[cc]][seqx.all + 1]
-      Ftpop.all <- x$fit$ft[,sexe[cc],dis,1][seqx.all + 1]
       names(Ft) <- names(Ftpop) <- as.character(seqx)
       names(Ft.all) <- names(Ftpop.all) <- as.character(seqx.all)
 

@@ -18,8 +18,7 @@ generisk(
   approx.np = "spline",
   multi.pheno = "all",
   init.weibull = NULL,
-  ncores = 1,
-  imput_missing_age_last_news = FALSE
+  ncores = 1
 )
 }
 \arguments{
@@ -48,8 +47,6 @@ generisk(
 \item{init.weibull}{initial values for Weibull model}
 
 \item{ncores}{number of cores used for parallel computing}
-
-\item{imput_missing_age_last_news}{logical: imputation of missing ages at last news ?}
 }
 \value{
 to be completed

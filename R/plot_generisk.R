@@ -198,12 +198,27 @@ plot_generisk <- function(x,
         }
 
         if(legendloc=="right"){
-          mtext(side = 4, line=0.5,
+
+          if(is.bootstrap){
+
+            mtext(side = 4, line=0.5,
+                  at = ifelse(tra.all["median", xmax + 1]>ymax,
+                              ymax,
+                              tra.all["median", xmax + 1]),
+                  text= textleg,
+                  las=1,
+                  col=cols[colk],
+                  cex=0.8)
+
+          }else{
+
+            mtext(side = 4, line=0.5,
                 at = ifelse(Ft.all[xmax + 1]>ymax, ymax, Ft.all[xmax + 1]),
                 text= textleg,
                 las=1,
                 col=cols[colk],
                 cex=0.8)
+          }
         }else{
           TEXTleg <- c(TEXTleg, textleg)
         }
@@ -239,13 +254,24 @@ plot_generisk <- function(x,
           textleg <- legendtext[colk]
         }
         if(legendloc=="right"){
-          mtext(side = 4,
-                line=0.5,
-                at = (Ft.all/Ftpop.all)[xmax + 1],
-                text= textleg,
-                las=1,
-                col=cols[colk],
-                cex=0.8)
+          if(is.bootstrap){
+            mtext(side = 4,
+                  line=0.5,
+                  at = (tra.all["median",]/Ftpop.all)[xmax + 1],
+                  text= textleg,
+                  las=1,
+                  col=cols[colk],
+                  cex=0.8)
+          }else{
+            mtext(side = 4,
+                  line=0.5,
+                  at = (Ft.all/Ftpop.all)[xmax + 1],
+                  text= textleg,
+                  las=1,
+                  col=cols[colk],
+                  cex=0.8)
+          }
+
         }else{
           TEXTleg <- c(TEXTleg, textleg)
         }

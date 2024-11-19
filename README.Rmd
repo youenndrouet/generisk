@@ -234,7 +234,6 @@ estim_NP <- generisk(Ft.pop = myFt,
                           DATA = as.data.frame(dat_MLH1),
                           B = 0,
                           multi.pheno = "all",
-                          imput_missing_age_last_news = FALSE, 
                           ncores = 4)
 ```
 36 iterations are required to reach a -log(LKL) of 522.37670. 
@@ -242,7 +241,7 @@ estim_NP <- generisk(Ft.pop = myFt,
 The `plot_generisk` function is useful to see the estimated penetrance curves. 
 
 ```{r fig.width = 9}
-plot_generisk(estim_NP)
+plot_generisk(estim_NP, xmax = 80)
 ```
 
 ```{r fig.width = 9}
@@ -253,7 +252,6 @@ And estimations can be extracted using the `summarize_generisk` function.
 ```{r}
 summarize_generisk(estim_NP, ages = c(30,50,70))
 ```
-
 
 In the above code we do the same analysis but assuming a Weibull shape for the penetrance curve.
 
@@ -288,7 +286,6 @@ estim_Weibull <- generisk(Ft.pop = myFt,
                           DATA = as.data.frame(dat_MLH1),
                           B = 0,
                           multi.pheno = "all",
-                          imput_missing_age_last_news = FALSE, 
                           ncores = 4)
 
 ```
@@ -297,7 +294,7 @@ Only 6 iterations are needed to reach convergence, but the -log(LKL) is higher c
 As you can see, risk estimate are quite different indicating that the shape of the curves (Weibull or non parametric using age nodes) is an important modeling choice.
 
 ```{r fig.width=9}
-plot_generisk(estim_Weibull)
+plot_generisk(estim_Weibull, xmax = 80)
 ```
 
 These two models can be compared formally using a likelihood ratio test, taking into account the different numbers of parameters between the models (24p for the NP model vs 12p for the Weibull model).
