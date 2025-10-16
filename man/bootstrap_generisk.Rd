@@ -4,14 +4,12 @@
 \alias{bootstrap_generisk}
 \title{bootstrap a generisk model}
 \usage{
-bootstrap_generisk(generisk_obj, B, ncores, start = "fit")
+bootstrap_generisk(generisk_obj, B, start = "fit")
 }
 \arguments{
 \item{generisk_obj}{object from generisk}
 
 \item{B}{number of bootstrap}
-
-\item{ncores}{number of workers multi-core computing}
 
 \item{start}{init values for parameters, if "fit" starts from the initial fit, otherwise starts from population incidence}
 }

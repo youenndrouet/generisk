@@ -3,6 +3,9 @@
 #' @param x an object returned by the generisk function
 #' @param conf show bootstrapped 95% confidence intervals
 #' @param ages at which ages ?
+#' @param digit_abs digit for absolute risks
+#' @param digit_rr digit for relative risks
+#' @param digit_abs_agec digit for absolute risks by agec
 #' @param traits over which traits ?
 #'
 #' @importFrom stats qnorm
@@ -20,13 +23,16 @@
 compute_cumrisk <- function(x,
                           conf = 0.95,
                           ages = seq(30,70,10),
-                          traits = names(x$params$FIT.pars)){
+                          traits = names(x$params$FIT.pars),
+                          digit_abs = 1,
+                          digit_rr = 1,
+                          digit_abs_agec = 1){
 
   is.bootstrap <- ('boot' %in% names(x))
   qn <- qnorm(1-(1-conf)/2)
 
-  TAB.absolute <- tab.absolute <- NULL
-  TAB.relative <- tab.relative <- NULL
+  TAB.absolute <- tab.absolute <- TAB.absolute.agec <- tab.absolute.agec <- NULL
+  TAB.relative <- tab.relative <- TAB.relative.agec <- tab.relative.agec <- NULL
 
   mask  <- x$fit$paramsmask
 
@@ -36,6 +42,8 @@ compute_cumrisk <- function(x,
   sexe <- rep(c(1,2),each=ng)
   geno <- rep(1:ng, times = 2)
 
+  age_class <- paste(c("0", as.character(ages)), c(as.character(ages), "120"), sep = "-")
+  seqx.all <- 0:120
 
   if(!is.bootstrap){
     stop("x must be a bootstrapped generisk object")
@@ -86,6 +94,8 @@ compute_cumrisk <- function(x,
          mask_matched <- which(mask[ll,cc] == mask[ll,])
 
          labcurve  <- paste(disname, paste(colnames(mask)[mask_matched], collapse="/"),sep=": ")
+         labc <- paste(labcurve,paste('(',penetmod,')',sep=""), sep=' ')
+
          Ftb  <- sapply(x$boot$ft.boot, FUN=function(boot) boot[,sexe[cc],dis,geno[cc]])
 
          if(disname %in% traits){
@@ -99,8 +109,8 @@ compute_cumrisk <- function(x,
 
              traits_male <- TRUE
              traits_female <- TRUE
-             Ftpop_males <- x$fit$ft[,1,dis,1][1:121]
-             Ftpop_females <- x$fit$ft[,2,dis,1][1:121]
+             Ftpop_males <- x$fit$ft[,1,dis,1][seqx.all + 1]
+             Ftpop_females <- x$fit$ft[,2,dis,1][seqx.all + 1]
 
              one_minus_Ftb_prod_males <- one_minus_Ftb_prod_males*(1-Ftb)
              one_minus_Ftpop_prod_males <- one_minus_Ftpop_prod_males * (1-Ftpop_males)
@@ -112,22 +122,23 @@ compute_cumrisk <- function(x,
              if(sexe[cc] == 1){
                #males
                traits_male <- TRUE
-               Ftpop_males <- x$fit$ft[,1,dis,1][1:121]
+               Ftpop_males <- x$fit$ft[,1,dis,1][seqx.all + 1]
                one_minus_Ftb_prod_males <- one_minus_Ftb_prod_males*(1-Ftb)
                one_minus_Ftpop_prod_males <- one_minus_Ftpop_prod_males * (1-Ftpop_males)
              }else{
                #females
                traits_female <- TRUE
-               Ftpop_females <- x$fit$ft[,2,dis,1][1:121]
+               Ftpop_females <- x$fit$ft[,2,dis,1][seqx.all + 1]
                one_minus_Ftb_prod_females <- one_minus_Ftb_prod_females*(1-Ftb)
                one_minus_Ftpop_prod_females <- one_minus_Ftpop_prod_females * (1-Ftpop_females)
              }
            }
 
-
          }else{
 
-           tra.all  <- sapply(0:120, FUN = function(x){
+           # summarize_generisk
+
+           tra.all  <- sapply(seqx.all, FUN = function(x){
                               medix  <- median(Ftb[x+1,])
                               qlo    <- quantile(Ftb[x+1,], (1-conf)/2)
                               qup    <- quantile(Ftb[x+1,], 1- ((1-conf)/2))
@@ -136,39 +147,113 @@ compute_cumrisk <- function(x,
                                        "qup" = as.double(qup)))
                             })
 
-           colnames(tra.all) <- 0:120
+           colnames(tra.all) <- seqx.all
+
+           ## agec
+
+           Ftb.agec <- NULL
+           aa <- c(0, ages, 120)
+
+           for (ii in (2:length(aa))){
+
+             ftb.agec <- Ftb[aa[ii]+1,] - Ftb[aa[ii-1]+1,]
+             Ftb.agec <- rbind(Ftb.agec, ftb.agec)
+           }
+
+           tra.agec  <- sapply(1:nrow(Ftb.agec), FUN = function(x){
+             medix  <- median(Ftb.agec[x,])
+             qlo    <- quantile(Ftb.agec[x,], (1-conf)/2)
+             qup    <- quantile(Ftb.agec[x,], 1- ((1-conf)/2))
+             return(c("median" = medix,
+                      "qlo" = as.double(qlo),
+                      "qup" = as.double(qup)))
+           })
+
+           colnames(tra.agec) <- age_class
 
 
-          icaa <- paste(round(tra.all['qlo',as.character(ages)]*100,1), round(tra.all['qup',as.character(ages)]*100,1), sep='-')
-          stat <- paste(round(tra.all["median",as.character(ages)]*100,1)," (",icaa,")",sep="")
-          tab.absolute <- rbind(tab.absolute,c(paste(labcurve,paste('(',penetmod,')',sep=""), sep=' '),stat ))
+           ## fin agec
 
+           rmed <- tra.all["median",as.character(ages)]
+           binf <- tra.all['qlo',as.character(ages)]
+           bsup <- tra.all['qup',as.character(ages)]
+
+           icaa <- paste(round(binf*100, digit_abs), round(bsup*100, digit_abs), sep='-')
+           stat <- paste(round(rmed*100, digit_abs)," (",icaa,")",sep="")
+
+           tab.absolute <- rbind(tab.absolute, c(labc, stat))
 
           if(length(unique(sexe[mask_matched]))==2){
             # 1 parameter for both sex
             Ftpop.all <- rowMeans(x$fit$ft[,,dis,1])
           }else{
-            Ftpop.all <- x$fit$ft[,sexe[cc],dis,1][1:121]
+            Ftpop.all <- x$fit$ft[,sexe[cc],dis,1][seqx.all + 1]
           }
 
-          TAB.absolute <- rbind(TAB.absolute, data.frame("outcome" = paste(labcurve,paste('(',penetmod,')',sep=""), sep=' '),
+          names(Ftpop.all) <- seqx.all
+
+          TAB.absolute <- rbind(TAB.absolute, data.frame("outcome" = labc,
                                                          "age" = ages,
-                                                         "median_abs_risk" =  tra.all["median",as.character(ages)],
-                                                         "lower_abs_risk" = tra.all['qlo',as.character(ages)],
-                                                         "upper_abs_risk" = tra.all['qup',as.character(ages)],
+                                                         "median_abs_risk" = rmed,
+                                                         "lower_abs_risk" = binf,
+                                                         "upper_abs_risk" = bsup,
                                                          "pop_risk" = Ftpop.all[ages + 1]))
+          # risks by age class
+          rmed <- tra.agec["median",]
+          binf <- tra.agec["qlo",]
+          bsup <- tra.agec["qup",]
+
+          icaa <- paste(round(binf*100, digit_abs_agec), round(bsup*100, digit_abs_agec), sep='-')
+          stat <- paste(round(rmed*100, digit_abs_agec)," (",icaa,")",sep="")
+
+          tab.absolute.agec <- rbind(tab.absolute.agec, c(labc, stat))
+
+          TAB.absolute.agec <- rbind(TAB.absolute.agec, data.frame("outcome" = labc,
+                                                                   "age_class" = age_class,
+                                                                   "median_abs_risk" = rmed,
+                                                                   "lower_abs_risk" = binf,
+                                                                   "upper_abs_risk" = bsup))
+
+
 
 
       # relative
+          rrmed <- (tra.all["median",]/Ftpop.all)[as.character(ages)]
+          binf <- (tra.all['qlo',]/Ftpop.all)[as.character(ages)]
+          bsup <- (tra.all['qup',]/Ftpop.all)[as.character(ages)]
 
-          icaa <- paste(round((tra.all['qlo',]/Ftpop.all)[as.character(ages)],1), round((tra.all['qup',]/Ftpop.all)[as.character(ages)],1), sep='-')
-          stat <- paste(round((tra.all["median",]/Ftpop.all)[as.character(ages)],1)," (",icaa,")",sep="")
+          icaa <- paste(round(binf, digit_rr), round(bsup, digit_rr), sep='-')
+          stat <- paste(round(rrmed, digit_rr)," (",icaa,")",sep="")
+
           tab.relative <- rbind(tab.relative,c(paste(labcurve,paste('(',penetmod,')',sep=""), sep=' '),stat ))
           TAB.relative <- rbind(TAB.relative, data.frame("outcome" = paste(labcurve,paste('(',penetmod,')',sep=""), sep=' '),
                                                          "age" = ages,
-                                                         "median_relative_risk" = (tra.all["median",]/Ftpop.all)[as.character(ages)],
-                                                         "lower_relative_risk" = (tra.all['qlo',]/Ftpop.all)[as.character(ages)],
-                                                         "upper_relative_risk" = (tra.all['qup',]/Ftpop.all)[as.character(ages)]))
+                                                         "median_relative_risk" = rrmed,
+                                                         "lower_relative_risk" = binf,
+                                                         "upper_relative_risk" = bsup))
+
+          # relative risks by age class
+          rmed <- tra.agec["median",]
+          binf <- tra.agec["qlo",]
+          bsup <- tra.agec["qup",]
+
+          agecabs.pop <- Ftpop.all[c(as.character(ages), "120")] - Ftpop.all[c("0", as.character(ages))]
+
+          rrmed <- rmed/agecabs.pop
+          rrinf <- binf/agecabs.pop
+          rrsup <- bsup/agecabs.pop
+
+          icaa <- paste(round(rrinf, digit_rr), round(rrsup, digit_rr), sep='-')
+          stat <- paste(round(rrmed, digit_rr)," (",icaa,")",sep="")
+
+          tab.relative.agec <- rbind(tab.relative.agec, c(labc,stat ))
+          TAB.relative.agec <- rbind(TAB.relative.agec, data.frame("outcome" = labc,
+                                                                   "age_class" = age_class,
+                                                                   "median_relative_risk" = rrmed,
+                                                                   "lower_relative_risk" = rrinf,
+                                                                   "upper_relative_risk" = rrsup))
+
+
 
       }
 
@@ -180,15 +265,15 @@ compute_cumrisk <- function(x,
   #now we compute the prod..
 
 
-
       if(traits_male){
 
         ## risk of at leat one trait is equal to 1-prod(Pr(no trait))
         Ftb_prod_males <- (1-one_minus_Ftb_prod_males)
-
         Ftpop_prod_males <- (1-one_minus_Ftpop_prod_males)
 
-        tra.all_males  <- sapply(0:120, FUN = function(x){
+        names(Ftpop_prod_males) <- seqx.all
+
+        tra.all_males  <- sapply(seqx.all, FUN = function(x){
           medix  <- median(Ftb_prod_males[x+1,])
           qlo    <- quantile(Ftb_prod_males[x+1,], (1-conf)/2)
           qup    <- quantile(Ftb_prod_males[x+1,], 1- ((1-conf)/2))
@@ -197,11 +282,39 @@ compute_cumrisk <- function(x,
                    "qup" = as.double(qup)))
         })
 
-        colnames(tra.all_males) <- 0:120
+        colnames(tra.all_males) <- seqx.all
+
+        ##agec
+        Ftb.agec <- NULL
+        aa <- c(0, ages, 120)
+
+        for (ii in (2:length(aa))){
+
+          ftb.agec <- Ftb_prod_males[aa[ii]+1,] - Ftb_prod_males[aa[ii-1]+1,]
+          Ftb.agec <- rbind(Ftb.agec, ftb.agec)
+        }
+
+        tra.agec_males  <- sapply(1:nrow(Ftb.agec), FUN = function(x){
+          medix  <- median(Ftb.agec[x,])
+          qlo    <- quantile(Ftb.agec[x,], (1-conf)/2)
+          qup    <- quantile(Ftb.agec[x,], 1- ((1-conf)/2))
+          return(c("median" = medix,
+                   "qlo" = as.double(qlo),
+                   "qup" = as.double(qup)))
+        })
+
+        colnames(tra.agec_males) <- age_class
+
+        ## fin agec
+
         label_cum_males <- paste(paste(traits, collapse = "|"), "males", sep = ' ')
 
-        icaa <- paste(round(tra.all_males['qlo',as.character(ages)]*100,1), round(tra.all_males['qup',as.character(ages)]*100,1), sep='-')
-        stat <- paste(round(tra.all_males["median",as.character(ages)]*100,1)," (",icaa,")",sep="")
+        rmed <- tra.all_males["median",as.character(ages)]
+        binf <- tra.all_males['qlo',as.character(ages)]
+        bsup <- tra.all_males['qup',as.character(ages)]
+
+        icaa <- paste(round(binf*100, digit_abs), round(bsup*100, digit_abs), sep='-')
+        stat <- paste(round(rmed*100, digit_abs)," (",icaa,")",sep="")
 
         tab.absolute <- rbind(tab.absolute,c(label_cum_males, stat ))
 
@@ -212,10 +325,31 @@ compute_cumrisk <- function(x,
                                                        "upper_abs_risk" = tra.all_males['qup',as.character(ages)],
                                                        "pop_risk" = Ftpop_prod_males[ages + 1]))
 
+        # risks by age class
+        rmed <- tra.agec_males["median",]
+        binf <- tra.agec_males["qlo",]
+        bsup <- tra.agec_males["qup",]
+
+        icaa <- paste(round(binf*100, digit_abs_agec), round(bsup*100, digit_abs_agec), sep='-')
+        stat <- paste(round(rmed*100, digit_abs_agec)," (",icaa,")",sep="")
+
+        tab.absolute.agec <- rbind(tab.absolute.agec, c(label_cum_males, stat))
+
+        TAB.absolute.agec <- rbind(TAB.absolute.agec, data.frame("outcome" = label_cum_males,
+                                                                 "age_class" = age_class,
+                                                                 "median_abs_risk" = rmed,
+                                                                 "lower_abs_risk" = binf,
+                                                                 "upper_abs_risk" = bsup))
+
         # relative
 
-        icaa <- paste(round((tra.all_males['qlo',]/Ftpop_prod_males)[as.character(ages)],1), round((tra.all_males['qup',]/Ftpop_prod_males)[as.character(ages)],1), sep='-')
-        stat <- paste(round((tra.all_males["median",]/Ftpop_prod_males)[as.character(ages)],1)," (",icaa,")",sep="")
+        rrmed <- (tra.all_males["median",]/Ftpop_prod_males)[as.character(ages)]
+        binf <- (tra.all_males['qlo',]/Ftpop_prod_males)[as.character(ages)]
+        bsup <- (tra.all_males['qup',]/Ftpop_prod_males)[as.character(ages)]
+
+        icaa <- paste(round(binf, digit_rr), round(bsup, digit_rr), sep='-')
+        stat <- paste(round(rrmed, digit_rr)," (",icaa,")",sep="")
+
         tab.relative <- rbind(tab.relative,c(label_cum_males, stat ))
         TAB.relative <- rbind(TAB.relative, data.frame("outcome" = label_cum_males,
                                                        "age" = ages,
@@ -224,15 +358,43 @@ compute_cumrisk <- function(x,
                                                        "upper_relative_risk" = (tra.all_males['qup',]/Ftpop_prod_males)[as.character(ages)]))
 
 
+        # relative risks by age class
+
+        rmed <- tra.agec_males["median",]
+        binf <- tra.agec_males["qlo",]
+        bsup <- tra.agec_males["qup",]
+
+        agecabs.pop <- Ftpop_prod_males[c(as.character(ages), "120")] - Ftpop_prod_males[c("0", as.character(ages))]
+
+        rrmed <- rmed/agecabs.pop
+        rrinf <- binf/agecabs.pop
+        rrsup <- bsup/agecabs.pop
+
+        icaa <- paste(round(rrinf, digit_rr), round(rrsup, digit_rr), sep='-')
+        stat <- paste(round(rrmed, digit_rr)," (",icaa,")",sep="")
+
+        tab.relative.agec <- rbind(tab.relative.agec, c(label_cum_males,stat ))
+        TAB.relative.agec <- rbind(TAB.relative.agec, data.frame("outcome" = label_cum_males,
+                                                                 "age_class" = age_class,
+                                                                 "median_relative_risk" = rrmed,
+                                                                 "lower_relative_risk" = rrinf,
+                                                                 "upper_relative_risk" = rrsup))
+
+
+
       }
 
 
       if(traits_female){
 
+
+        ## risk of at leat one trait is equal to 1-prod(Pr(no trait))
         Ftb_prod_females <- (1-one_minus_Ftb_prod_females)
         Ftpop_prod_females <- (1-one_minus_Ftpop_prod_females)
 
-        tra.all_females  <- sapply(0:120, FUN = function(x){
+        names(Ftpop_prod_females) <- seqx.all
+
+        tra.all_females  <- sapply(seqx.all, FUN = function(x){
           medix  <- median(Ftb_prod_females[x+1,])
           qlo    <- quantile(Ftb_prod_females[x+1,], (1-conf)/2)
           qup    <- quantile(Ftb_prod_females[x+1,], 1- ((1-conf)/2))
@@ -241,12 +403,41 @@ compute_cumrisk <- function(x,
                    "qup" = as.double(qup)))
         })
 
-        colnames(tra.all_females) <- 0:120
+        colnames(tra.all_females) <- seqx.all
+
+        ##agec
+        Ftb.agec <- NULL
+        aa <- c(0, ages, 120)
+
+        for (ii in (2:length(aa))){
+
+          ftb.agec <- Ftb_prod_females[aa[ii]+1,] - Ftb_prod_females[aa[ii-1]+1,]
+          Ftb.agec <- rbind(Ftb.agec, ftb.agec)
+        }
+
+        tra.agec_females  <- sapply(1:nrow(Ftb.agec), FUN = function(x){
+          medix  <- median(Ftb.agec[x,])
+          qlo    <- quantile(Ftb.agec[x,], (1-conf)/2)
+          qup    <- quantile(Ftb.agec[x,], 1- ((1-conf)/2))
+          return(c("median" = medix,
+                   "qlo" = as.double(qlo),
+                   "qup" = as.double(qup)))
+        })
+
+        colnames(tra.agec_females) <- age_class
+
+        ## fin agec
+
 
         label_cum_females <- paste(paste(traits, collapse = "|"), "females", sep = ' ')
 
-        icaa <- paste(round(tra.all_females['qlo',as.character(ages)]*100,1), round(tra.all_females['qup',as.character(ages)]*100,1), sep='-')
-        stat <- paste(round(tra.all_females["median",as.character(ages)]*100,1)," (",icaa,")",sep="")
+        rmed <- tra.all_females["median",as.character(ages)]
+        binf <- tra.all_females['qlo',as.character(ages)]
+        bsup <- tra.all_females['qup',as.character(ages)]
+
+        icaa <- paste(round(binf*100, digit_abs), round(bsup*100, digit_abs), sep='-')
+        stat <- paste(round(rmed*100, digit_abs)," (",icaa,")",sep="")
+
         tab.absolute <- rbind(tab.absolute,c(label_cum_females, stat ))
 
         TAB.absolute <- rbind(TAB.absolute, data.frame("outcome" = label_cum_females,
@@ -254,12 +445,33 @@ compute_cumrisk <- function(x,
                                                        "median_abs_risk" =  tra.all_females["median",as.character(ages)],
                                                        "lower_abs_risk" = tra.all_females['qlo',as.character(ages)],
                                                        "upper_abs_risk" = tra.all_females['qup',as.character(ages)],
-                                                       "pop_risk" = Ftpop_prod_females[ages+1]))
+                                                       "pop_risk" = Ftpop_prod_females[ages + 1]))
 
-        #relative
+        # risks by age class
+        rmed <- tra.agec_females["median",]
+        binf <- tra.agec_females["qlo",]
+        bsup <- tra.agec_females["qup",]
 
-        icaa <- paste(round((tra.all_females['qlo',]/Ftpop_prod_females)[as.character(ages)],1), round((tra.all_females['qup',]/Ftpop_prod_females)[as.character(ages)],1), sep='-')
-        stat <- paste(round((tra.all_females["median",]/Ftpop_prod_females)[as.character(ages)],1)," (",icaa,")",sep="")
+        icaa <- paste(round(binf*100, digit_abs_agec), round(bsup*100, digit_abs_agec), sep='-')
+        stat <- paste(round(rmed*100, digit_abs_agec)," (",icaa,")",sep="")
+
+        tab.absolute.agec <- rbind(tab.absolute.agec, c(label_cum_females, stat))
+
+        TAB.absolute.agec <- rbind(TAB.absolute.agec, data.frame("outcome" = label_cum_females,
+                                                                 "age_class" = age_class,
+                                                                 "median_abs_risk" = rmed,
+                                                                 "lower_abs_risk" = binf,
+                                                                 "upper_abs_risk" = bsup))
+
+        # relative
+
+        rrmed <- (tra.all_females["median",]/Ftpop_prod_females)[as.character(ages)]
+        binf <- (tra.all_females['qlo',]/Ftpop_prod_females)[as.character(ages)]
+        bsup <- (tra.all_females['qup',]/Ftpop_prod_females)[as.character(ages)]
+
+        icaa <- paste(round(binf, digit_rr), round(bsup, digit_rr), sep='-')
+        stat <- paste(round(rrmed, digit_rr)," (",icaa,")",sep="")
+
         tab.relative <- rbind(tab.relative,c(label_cum_females, stat ))
         TAB.relative <- rbind(TAB.relative, data.frame("outcome" = label_cum_females,
                                                        "age" = ages,
@@ -267,15 +479,44 @@ compute_cumrisk <- function(x,
                                                        "lower_relative_risk" = (tra.all_females['qlo',]/Ftpop_prod_females)[as.character(ages)],
                                                        "upper_relative_risk" = (tra.all_females['qup',]/Ftpop_prod_females)[as.character(ages)]))
 
+        # relative risks by age class
+        rmed <- tra.agec_females["median",]
+        binf <- tra.agec_females["qlo",]
+        bsup <- tra.agec_females["qup",]
+
+        agecabs.pop <- Ftpop_prod_females[c(as.character(ages), "120")] - Ftpop_prod_females[c("0", as.character(ages))]
+
+        rrmed <- rmed/agecabs.pop
+        rrinf <- binf/agecabs.pop
+        rrsup <- bsup/agecabs.pop
+
+        icaa <- paste(round(rrinf, digit_rr), round(rrsup, digit_rr), sep='-')
+        stat <- paste(round(rrmed, digit_rr)," (",icaa,")",sep="")
+
+        tab.relative.agec <- rbind(tab.relative.agec, c(label_cum_females,stat ))
+        TAB.relative.agec <- rbind(TAB.relative.agec, data.frame("outcome" = label_cum_females,
+                                                                 "age_class" = age_class,
+                                                                 "median_relative_risk" = rrmed,
+                                                                 "lower_relative_risk" = rrinf,
+                                                                 "upper_relative_risk" = rrsup))
+
+
 
       }
 
   colnames(tab.absolute) <- colnames(tab.relative) <- c("strata", paste0("Age=",ages))
+  colnames(tab.absolute.agec) <- colnames(tab.relative.agec) <- c("strata", paste0("Age=",age_class))
+
 
   return(list("ABSOLUTE_CUM_RISKS" = tab.absolute,
+              "ABSOLUTE_RISKS_AGEC" = tab.absolute.agec,
               "RELATIVE_CUM_RISKS" = tab.relative,
-              "TAB_data_abs" = TAB.absolute,
-              "TAB_data_relative" = TAB.relative))
+              "RELATIVE_RISKS_AGEC" = tab.relative.agec,
+              "data_ABSOLUTE_CUM_RISKS" = TAB.absolute,
+              "data_ABSOLUTE_RISKS_AGEC" = TAB.absolute.agec,
+              "data_RELATIVE_CUM_RISKS" = TAB.relative,
+              "data_RELATIVE_RISKS_AGEC" = TAB.relative.agec))
+
 
     }
   }

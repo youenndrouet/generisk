@@ -4,6 +4,7 @@
 # generisk <a href="https://github.com/youenndrouet/generisk"><img src="man/figures/logo.png" align="right" height="138" /></a>
 
 <!-- badges: start -->
+
 <!-- badges: end -->
 
 ## Overview
@@ -67,8 +68,11 @@ dat_GRL <- eriscam_mlh1 %>%
                                     if_else(COLORECTUM < FIRST_COLONOSCOPY, 
                                             COLORECTUM, 
                                             FIRST_COLONOSCOPY),
-                                    AGE_AT_LAST_NEWS), 
-                             AGE_AT_LAST_NEWS),
+                                    COLORECTUM),
+                           if_else(!is.na(FIRST_COLONOSCOPY), 
+                                   FIRST_COLONOSCOPY,
+                                   AGE_AT_LAST_NEWS)
+                           ),
          
          END_event = if_else(!is.na(ENDOMETRIUM),
                              if_else(!is.na(HYSTERECTOMY), 
@@ -82,8 +86,12 @@ dat_GRL <- eriscam_mlh1 %>%
                                     if_else(ENDOMETRIUM < HYSTERECTOMY, 
                                             ENDOMETRIUM, 
                                             HYSTERECTOMY),
-                                    AGE_AT_LAST_NEWS), 
-                             AGE_AT_LAST_NEWS),
+                                    ENDOMETRIUM),
+                           if_else(!is.na(HYSTERECTOMY), 
+                                   HYSTERECTOMY,
+                                   AGE_AT_LAST_NEWS)
+                           ),
+           
          OVA_event = if_else(!is.na(OVARY),
                              if_else(!is.na(OOPHORECTOMY), 
                                     if_else(OVARY < OOPHORECTOMY, 
@@ -96,8 +104,11 @@ dat_GRL <- eriscam_mlh1 %>%
                                     if_else(OVARY < OOPHORECTOMY, 
                                             OVARY, 
                                             OOPHORECTOMY),
-                                    AGE_AT_LAST_NEWS), 
-                             AGE_AT_LAST_NEWS)
+                                    OVARY),
+                           if_else(!is.na(OOPHORECTOMY), 
+                                   OOPHORECTOMY,
+                                   AGE_AT_LAST_NEWS)
+                           )
          )
 
 wi_colectomy <- which(!is.na(dat_GRL$TOTAL_COLECTOMY))
@@ -141,7 +152,6 @@ a list named `myFt` combining these cumulative risks representing the
 cancer risks in the French general population.
 
 ``` r
-
 rates_by1year_0to120 <- function(rates_byclasses){
     out <- c(0, # rates at age = 0 is 0
              rep(rates_byclasses[1],14), # ages = 1 to 14 
@@ -202,7 +212,7 @@ plotinc <- ddinc %>%
 plotinc
 ```
 
-<img src="man/figures/README-unnamed-chunk-6-1.png" width="100%" />
+<img src="man/figures/README-rates-1.png" width="100%" />
 
 ``` r
 
@@ -213,49 +223,78 @@ myFt <- list("CCR" = Ft.CRC.smo, "END" = Ft.END.smo, "OVA" = Ft.OVA.smo)
 The next step is to define other parameters required by `generisk`. This
 is done through a list of parameters defined for each cancer site.
 
+The `penet.model` parameter must be chosen from the following three
+options:
+
+1.  **“np” (Non-parametric)**  
+    A flexible function based on age nodes and cubic spline
+    interpolation.
+
+2.  **“Weibull”**  
+    A Weibull-like function with three parameters.
+
+3.  **“Cox”**  
+    A Cox-like function where penetrance is modeled as the product of
+    population incidence rates and a constant hazard ratio.
+
+Experience shows that the choice of model is very important. In
+practice, the optimal model—judged by its likelihood—is often a
+compromise between flexibility (i.e., degrees of freedom) and parsimony.
+A more flexible model may fit the data better but risks overfitting,
+while a more parsimonious model may generalize better but fail to
+capture complex patterns.
+
+For this demonstration, we use the non-parametric `"np"` option to model
+colorectal cancer (CRC) penetrance, with three pre-specified age nodes
+at 40, 60, and 80 years. This choice is motivated by the relatively high
+number of observed CRC cases, which allows for a more flexible modeling
+approach.
+
+In contrast, we use the less flexible `"Cox"` model for endometrial and
+ovarian cancers due to the smaller number of observed cases for these
+localizations. The Cox model provides a more stable estimate under
+limited data conditions by leveraging population incidence rates and
+assuming a constant hazard ratio.
+
 ``` r
-myParams_NP <- list(
+myParams <- list(
   
   "CRC" = list(
     penet.model   = "np",
-    agenodes = c(30,40,50,60,70),
+    agenodes = c(40, 60, 80),
     inheritance   = "dominant",
     implic.loci   = TRUE,
-    gender.effect = TRUE),
+    gender.effect = FALSE),
   
   "END" = list(
-    penet.model   = "np",
-    agenodes = c(30,40,50,60,70),
+    penet.model   = "Cox",
     inheritance   = "dominant",
     implic.loci   = TRUE,
     gender.effect = TRUE),
   
   "OVA" = list(
-    penet.model   = "np",
-    agenodes = c(30,40,50,60,70),
+    penet.model   = "Cox",
     inheritance   = "dominant",
     implic.loci   = TRUE,
     gender.effect = TRUE)
 )
 ```
 
-Then we run the `generisk` program using these parameters. Calculations
-will be performed using 4 cores. The frequency of the mutations in MLH1
-in the general population is assumed to be 1/1946 (cf
+Then we run the `generisk` program using these parameters. The frequency
+of the mutations in MLH1 in the general population is assumed to be
+1/1946 (cf
 <https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5336409/pdf/nihms827219.pdf>)
 
 ``` r
-estim_NP <- generisk(Ft.pop = myFt,
-                          FIT.pars = myParams_NP,
+estim <- generisk(Ft.pop = myFt,
+                          FIT.pars = myParams,
+                          LIK.method = "GRL",
                           fA = 1/1946, 
-                          DATA = as.data.frame(dat_MLH1),
-                          B = 0,
-                          multi.pheno = "all",
-                          ncores = 4)
+                          DATA = as.data.frame(dat_MLH1))
 #>  ________________________________________
 #>                                          
 #>   The generisk R program 
-#>   version: 0.1.1 
+#>   version: 0.1.4 
 #>                                         
 #>   Number of families:  236 
 #>    - CRC_event :  783 / 783  affected individuals will be analyzed 
@@ -263,212 +302,109 @@ estim_NP <- generisk(Ft.pop = myFt,
 #>    - OVA_event :  29 / 29  affected individuals will be analyzed 
 #>    - Unaffected individuals: 1418 / 3886  individuals with missing age at last news removed from analysis (age --> 0) 
 #> 
-#> Parallel computing using 4 / 8 available cores. 
 #>   -> Program initialization. 
 #>   -> Pre-calculations to speed-up likelihood algorithm. 
 #>   -> ML optimization by nlminb. 
-#>   0:     697.36739: -7.90240 -7.32511 -6.08231 -4.87152 -4.03744 -1.81097 -7.69232 -7.18030 -6.02310 -5.16432 -4.50888 -2.13868 -10.6159 -9.06685 -7.21597 -5.81725 -4.96980 -3.79609 -8.19535 -8.15298 -7.14315 -6.26111 -5.59995 -4.02964
-#>   1:     567.95775: -6.73629 -6.30674 -4.39906 -3.71890 -2.82445 -1.77724 -6.53948 -6.26307 -4.34619 -4.07379 -3.44589 -2.06517 -10.4835 -8.82559 -6.80874 -5.26447 -4.71520 -3.76808 -8.09930 -8.06677 -7.00821 -6.14239 -5.59200 -4.02450
-#>   2:     536.87738: -5.44765 -6.56272 -3.07003 -3.60465 -2.79934 -1.81097 -5.10199 -5.95973 -2.25387 -3.66852 -3.43400 -1.94212 -10.0752 -8.02670 -5.86766 -4.60960 -4.51015 -3.75309 -7.80102 -7.84539 -6.87336 -5.72535 -5.55086 -4.00837
-#>   3:     532.74499: -4.31201 -7.25149 -1.54437 -3.73786 -2.05877 -1.81097 -5.43362 -6.60827 -0.498011 -4.40940 -3.82547 -2.02661 -9.27974 -6.46282 -5.72690 -2.88893 -4.43560 -3.74433 -7.35661 -7.55933 -6.87171 -5.05502 -5.47256 -4.01147
-#>   4:     529.35226: -4.29333 -7.25175 -1.65500 -3.74545 -2.05953 -1.81097 -5.39444 -6.60853 -1.54962 -4.41641 -3.82730 -2.02788 -9.25356 -6.42136 -5.69493 -2.83290 -4.42969 -3.74432 -7.35054 -7.55587 -6.86603 -5.02574 -5.47246 -4.01142
-#>   5:     527.24671: -4.14605 -7.25984 -2.25788 -3.77420 -2.00105 -1.81097 -5.03614 -6.59468 -1.51033 -4.43800 -3.77484 -2.02778 -9.02496 -6.06769 -5.52621 -2.25343 -4.37207 -3.74288 -7.29313 -7.52247 -6.82225 -4.79536 -5.44919 -4.01151
-#>   6:     525.30327: -3.92622 -7.32511 -2.31380 -3.78973 -1.82664 -1.81097 -4.82286 -6.63442 -1.19051 -4.50452 -3.76725 -2.03040 -8.78665 -5.67960 -5.37768 -1.58993 -4.32217 -3.74161 -7.22073 -7.47812 -6.78615 -4.54439 -5.42525 -4.01165
-#>   7:     524.85351: -3.90925 -7.32453 -2.33344 -3.78665 -1.77731 -1.81097 -4.79151 -6.62856 -1.13635 -4.50130 -3.75421 -2.02962 -8.73433 -5.61040 -5.34394 -1.35548 -4.30985 -3.74173 -7.21520 -7.47539 -6.77460 -4.46876 -5.42097 -4.01163
-#>   8:     524.13838: -3.87306 -7.32323 -2.37179 -3.78107 -1.67400 -1.81097 -4.74545 -6.61792 -1.23688 -4.49845 -3.73198 -2.02961 -8.62564 -5.46814 -5.28026 -0.889843 -4.28717 -3.74204 -7.20230 -7.46912 -6.75120 -4.30393 -5.41324 -4.01159
-#>   9:     523.58241: -3.61440 -7.32511 -2.46084 -3.80155 -1.30689 -1.81097 -4.61549 -6.66144 -1.29286 -4.61437 -3.71193 -2.04548 -8.11859 -4.72204 -5.09897 -0.641530 -4.23882 -3.74224 -7.04962 -7.38588 -6.66764 -3.49392 -5.39340 -4.01258
-#>  10:     523.16307: -3.42285 -7.32511 -2.54237 -3.82776 -1.02708 -1.81097 -4.50488 -6.71614 -1.29043 -4.73909 -3.66878 -2.05912 -7.56209 -3.93360 -4.91128 -0.870720 -4.17827 -3.74233 -6.90497 -7.30656 -6.58888 -2.66559 -5.37212 -4.01373
-#>  11:     522.95927: -3.74457 -7.32511 -2.58343 -3.77084 -1.67050 -1.81097 -4.47543 -6.58763 -1.25849 -4.66639 -3.40380 -2.04886 -7.11103 -3.48515 -4.80901 -0.967561 -4.10260 -3.74336 -6.86931 -7.29443 -6.51488 -1.88505 -5.36671 -4.01525
-#>  12:     522.84508: -3.80783 -7.32511 -2.56656 -3.76750 -1.52008 -1.81097 -4.56027 -6.56663 -1.31428 -4.65603 -3.40218 -2.03698 -7.23866 -3.87906 -4.87916 -0.971176 -4.10501 -3.74524 -6.95044 -7.34010 -6.54099 -2.28188 -5.36938 -4.01514
-#>  13:     522.77776: -3.77699 -7.32511 -2.58882 -3.78294 -1.29298 -1.81097 -4.59117 -6.54108 -1.30744 -4.69657 -3.32515 -2.02700 -7.10600 -3.89194 -4.89226 -0.936109 -4.06949 -3.74780 -6.98437 -7.36267 -6.53663 -2.17728 -5.36636 -4.01595
-#>  14:     522.74666: -3.73792 -7.32511 -2.60100 -3.81077 -1.27529 -1.81097 -4.59653 -6.49745 -1.29610 -4.73517 -3.19721 -2.01650 -6.93570 -3.86026 -4.90639 -0.944015 -4.02351 -3.75039 -7.01735 -7.38660 -6.52653 -2.05823 -5.36154 -4.01716
-#>  15:     522.70542: -3.68197 -7.32511 -2.64250 -3.93517 -1.24180 -1.81097 -4.61306 -6.27531 -1.29404 -4.89300 -2.60012 -1.96876 -6.26060 -3.83544 -4.99512 -0.996638 -3.81362 -3.76261 -7.20112 -7.51756 -6.48963 -1.72260 -5.34106 -4.02263
-#>  16:     522.66468: -3.67852 -7.32511 -2.63049 -3.96374 -1.25923 -1.81097 -4.60524 -6.21010 -1.30007 -4.92076 -2.54519 -1.89628 -6.19142 -3.90205 -5.03970 -1.01213 -3.76677 -3.76538 -7.26211 -7.56091 -6.49159 -1.85489 -5.33837 -4.02392
-#>  17:     522.60831: -3.73484 -7.32511 -2.62472 -4.05398 -1.25536 -1.81097 -4.58300 -5.94459 -1.35562 -5.01908 -2.29268 -1.64301 -5.81840 -3.99309 -5.15545 -1.04227 -3.56174 -3.77604 -7.47101 -7.71562 -6.47418 -1.94884 -5.32521 -4.02885
-#>  18:     522.56408: -3.78549 -7.32511 -2.58859 -4.22331 -1.23649 -1.81097 -4.57800 -5.33382 -1.43701 -5.16432 -1.97642 -1.08379 -5.17099 -4.11349 -5.38274 -1.03583 -3.09495 -3.79609 -7.89993 -8.05003 -6.42802 -2.09409 -5.30025 -4.02964
-#>  19:     522.54696: -3.76352 -7.32495 -2.59456 -4.16557 -1.23155 -1.81097 -4.58348 -5.51832 -1.39062 -5.11608 -2.13425 -1.27890 -5.39729 -4.07170 -5.30931 -1.02929 -3.23979 -3.79609 -7.76424 -7.94251 -6.44032 -2.05147 -5.31977 -4.02964
-#>  20:     522.50681: -3.76056 -7.32482 -2.56558 -4.20730 -1.20080 -1.81097 -4.59984 -5.25476 -1.36545 -5.15402 -2.24624 -1.13877 -5.24003 -4.08616 -5.37786 -0.977512 -3.05122 -3.79609 -7.91846 -8.07325 -6.41801 -2.06154 -5.30472 -4.02964
-#>  21:     522.46706: -3.77494 -7.32511 -2.54839 -4.23715 -1.24385 -1.81097 -4.62729 -4.97141 -1.39942 -5.16432 -2.35679 -0.999631 -5.12917 -4.07988 -5.43759 -0.977408 -2.85560 -3.79609 -8.07681 -8.15298 -6.39676 -2.11223 -5.29216 -4.02964
-#>  22:     522.46115: -3.76813 -7.29358 -2.53891 -4.27147 -1.39670 -1.81097 -4.78222 -4.30952 -1.45758 -5.16432 -2.71530 -0.795813 -5.05904 -3.91266 -5.52684 -1.01789 -2.40083 -3.79609 -8.19535 -8.15298 -6.26889 -2.17432 -5.27286 -4.02964
-#>  23:     522.43295: -3.77602 -7.31896 -2.54047 -4.23074 -1.31902 -1.81097 -4.70416 -4.63178 -1.41340 -5.16432 -2.55058 -0.884009 -5.20758 -3.98009 -5.48712 -1.01188 -2.60282 -3.79609 -8.19535 -8.15298 -6.37392 -2.16113 -5.27490 -4.02964
-#>  24:     522.41631: -3.75013 -7.28732 -2.56368 -4.27653 -1.25295 -1.81097 -4.80260 -4.30879 -1.33274 -5.16432 -2.53547 -0.893501 -5.16687 -3.95737 -5.55359 -1.09321 -2.30168 -3.79609 -8.19535 -8.15298 -6.39860 -2.13825 -5.28579 -4.02964
-#>  25:     522.40124: -3.75525 -7.29950 -2.56890 -4.25757 -1.21950 -1.81097 -4.73287 -4.50019 -1.37994 -5.16432 -2.48887 -0.941667 -5.24079 -3.96575 -5.52611 -1.05598 -2.42855 -3.79609 -8.19535 -8.15298 -6.40798 -2.12042 -5.30601 -4.02964
-#>  26:     522.39299: -3.75286 -7.28609 -2.57248 -4.27915 -1.21687 -1.81097 -4.71553 -4.44255 -1.40231 -5.15379 -2.48451 -0.953460 -5.22801 -3.94223 -5.54749 -1.06948 -2.31925 -3.79609 -8.19535 -8.15298 -6.37700 -2.09307 -5.33193 -4.02964
-#>  27:     522.38913: -3.74599 -7.28035 -2.57729 -4.28131 -1.22253 -1.81097 -4.70387 -4.47079 -1.39171 -5.14410 -2.43807 -1.01403 -5.25493 -3.95020 -5.54678 -1.07171 -2.34578 -3.79609 -8.19535 -8.15298 -6.38394 -2.05741 -5.35395 -4.02964
-#>  28:     522.38784: -3.73958 -7.26562 -2.58491 -4.29201 -1.22207 -1.81097 -4.69078 -4.47692 -1.38438 -5.12955 -2.37763 -1.09453 -5.29045 -3.95466 -5.55498 -1.08442 -2.33433 -3.79609 -8.19535 -8.15298 -6.38308 -2.01072 -5.38706 -4.02964
-#>  29:     522.38450: -3.73928 -7.24626 -2.59230 -4.30367 -1.21599 -1.81097 -4.68361 -4.46963 -1.39514 -5.12229 -2.32140 -1.18064 -5.33770 -3.95551 -5.56354 -1.09481 -2.34375 -3.79609 -8.19535 -8.15298 -6.37232 -1.97879 -5.41650 -4.02964
-#>  30:     522.38258: -3.73989 -7.19942 -2.59569 -4.32874 -1.20912 -1.81097 -4.69060 -4.39765 -1.42359 -5.12519 -2.26372 -1.34993 -5.42973 -3.93844 -5.58380 -1.10766 -2.36306 -3.79609 -8.19535 -8.15298 -6.33776 -1.94764 -5.45533 -4.02964
-#>  31:     522.38168: -3.75291 -7.20950 -2.58253 -4.32215 -1.21728 -1.81097 -4.70682 -4.34610 -1.43353 -5.14500 -2.36250 -1.23882 -5.39480 -3.93337 -5.58399 -1.09699 -2.36227 -3.79609 -8.19535 -8.15298 -6.32685 -2.00764 -5.41542 -4.02964
-#>  32:     522.37941: -3.74243 -7.21242 -2.58062 -4.31818 -1.21596 -1.81097 -4.70035 -4.38166 -1.41311 -5.15071 -2.33760 -1.24229 -5.38629 -3.92637 -5.58076 -1.08977 -2.35909 -3.79609 -8.19535 -8.15298 -6.35196 -1.99636 -5.41336 -4.02964
-#>  33:     522.37838: -3.74544 -7.19450 -2.57769 -4.32283 -1.21598 -1.81097 -4.70065 -4.36766 -1.41319 -5.16218 -2.32231 -1.28365 -5.41225 -3.91241 -5.58724 -1.08786 -2.36905 -3.79609 -8.19535 -8.15298 -6.35192 -1.99649 -5.41435 -4.02964
-#>  34:     522.37738: -3.75200 -7.16473 -2.57506 -4.33238 -1.21671 -1.81097 -4.70016 -4.34878 -1.41664 -5.16432 -2.29821 -1.34851 -5.45036 -3.89600 -5.59783 -1.08975 -2.37109 -3.79609 -8.19535 -8.15298 -6.34628 -1.99275 -5.41943 -4.02964
-#>  35:     522.37712: -3.75179 -7.17467 -2.57485 -4.32853 -1.21735 -1.81097 -4.70136 -4.35113 -1.41830 -5.16432 -2.32118 -1.30396 -5.43128 -3.90136 -5.59522 -1.08916 -2.36384 -3.79609 -8.19535 -8.15298 -6.34555 -2.00437 -5.41122 -4.02964
-#>  36:     522.37670: -3.75271 -7.16201 -2.57361 -4.33094 -1.21721 -1.81097 -4.70148 -4.34998 -1.41859 -5.16432 -2.32016 -1.31202 -5.44119 -3.89483 -5.59958 -1.08931 -2.35744 -3.79609 -8.19535 -8.15298 -6.34538 -2.00929 -5.40779 -4.02964
+#>   0:     679.62935: -6.79246 -4.70600 -3.25284 -2.15144  1.00000  1.00000
+#>   1:     601.64894: -6.10220 -4.00003 -3.25284 -2.11191  1.14807  1.04075
+#>   2:     559.40390: -5.24347 -3.53660 -3.25284 -2.11289  1.35368  1.11518
+#>   3:     537.54918: -3.99845 -4.02108 -3.25284 -2.15144  2.77598  1.67884
+#>   4:     534.10528: -2.20464 -4.70600 -3.25284 -2.15144  2.94068  1.96946
+#>   5:     530.77679: -3.06737 -3.97710 -3.25284 -2.15144  4.16394  2.48814
+#>   6:     529.60758: -3.11187 -3.68801 -3.25284 -2.15144  5.16337  2.96979
+#>   7:     527.35523: -3.41186 -1.97322 -3.25284 -2.15144  8.94923  4.89322
+#>   8:     526.85499: -3.23186 -1.90598 -3.25284 -2.15144  9.94134  5.35739
+#>   9:     526.09495: -2.71420 -1.96322 -3.25284 -2.15144  12.6928  6.63202
+#>  10:     525.91179: -2.60582 -1.93810 -3.25284 -2.15144  14.1183  7.30898
+#>  11:     525.44467: -2.48750 -1.88675 -3.25284 -2.15144  18.1005  9.21644
+#>  12:     524.72974: -2.47524 -1.90645 -3.25284 -2.15144  24.8993  12.4884
+#>  13:     524.23032: -2.59411 -2.06888 -3.25284 -2.15144  33.9771  16.8744
+#>  14:     524.18229: -2.65645 -2.12244 -3.25284 -2.15144  32.0199  15.9598
+#>  15:     524.16704: -2.72462 -2.19679 -3.25284 -2.15144  31.9802  15.9816
+#>  16:     524.16653: -2.72564 -2.20358 -3.25284 -2.15144  31.9678  16.0010
 #> 
 #>   job done !
 ```
 
-36 iterations are required to reach a -log(LKL) of 522.37670.
+16 iterations are required to reach a -log(LKL) of 524.16653.
 
 The `plot_generisk` function is useful to see the estimated penetrance
 curves.
 
 ``` r
-plot_generisk(estim_NP, xmax = 80)
+plot_generisk(estim, xmax = 80)
 ```
 
-<img src="man/figures/README-unnamed-chunk-9-1.png" width="100%" />
+<img src="man/figures/README-unnamed-chunk-2-1.png" width="100%" />
 
 ``` r
-plot_generisk(estim_NP, type ="relative")
+plot_generisk(estim, xmax = 80, type ="relative")
 ```
 
-<img src="man/figures/README-unnamed-chunk-10-1.png" width="100%" />
+<img src="man/figures/README-unnamed-chunk-3-1.png" width="100%" />
 
-And estimations can be extracted using the `summarize_generisk`
-function.
+Confidence intervals can be computed using the bootstrap approach,
+considering the family as the statistical unit. This method accounts for
+the correlation structure within families and provides robust
+uncertainty estimates for penetrance curves.
+
+For this demonstration, 200 bootstrap resamples are drawn. Computation
+takes approximately 15 minutes on a high-performance laptop.
 
 ``` r
-summarize_generisk(estim_NP, ages = c(30,50,70))
+load("estim_boot.RData")
+#estim_boot <- bootstrap_generisk(estim, B = 200) 
+#save(estim_boot, file = "estim_boot.RData")
+```
+
+The `plot_generisk` function with the `allcurves` option is useful for
+visualizing the 200 bootstrapped penetrance curves. This allows for a
+clear representation of the variability and uncertainty in the estimated
+penetrance across bootstrap samples.
+
+``` r
+plot_generisk(estim_boot, xmax = 80, allcurves = TRUE, multiple = TRUE )
+```
+
+<img src="man/figures/README-plot_boot-1.png" width="100%" /><img src="man/figures/README-plot_boot-2.png" width="100%" /><img src="man/figures/README-plot_boot-3.png" width="100%" />
+
+Of note, the colored curves represent the median penetrance estimates
+across the 200 bootstrap resamples, while the black curve corresponds to
+the penetrance curve estimated from the original sample. This visual
+comparison highlights the variability captured through resampling and
+the robustness of the original estimate.
+
+From the `estim_boot` object, 95% confidence intervals can be extracted
+using the `summarize_generisk()` function. This function summarizes the
+bootstrap results and provides uncertainty estimates for the penetrance
+curves
+
+``` r
+outsum <- summarize_generisk(estim_boot, 
+                             ages = c(30, 40, 50, 60, 70),
+                             conf = 0.95)
 #> 
 #> Model overall statistics: 
-#>  -2logL= 1044.8 with 24 parameters (AIC= 1092.8)
+#>  -2logL= 1048.4 with 6 parameters (AIC= 1060.4)
 #>  relative convergence (4) 
 #> 
 #> Estimated risks:
-#> $ABSOLUTE_CUM_RISKS
-#>      strata                                   Age=30 Age=50 Age=70
-#> [1,] "OVA: f:1 (NP nodes at: 30/40/50/60/70)" "0"    "0.2"  "14.1"
-#> [2,] "END: f:1 (NP nodes at: 30/40/50/60/70)" "0.4"  "2.8"  "45.9"
-#> [3,] "CRC: m:1 (NP nodes at: 30/40/50/60/70)" "2.3"  "10"   "41"  
-#> [4,] "CRC: f:1 (NP nodes at: 30/40/50/60/70)" "0.9"  "26.4" "36.8"
-#> 
-#> $RELATIVE_CUM_RISKS
-#>      strata                                   Age=30  Age=50 Age=70
-#> [1,] "OVA: f:1 (NP nodes at: 30/40/50/60/70)" "1"     "1.7"  "20.3"
-#> [2,] "END: f:1 (NP nodes at: 30/40/50/60/70)" "184.3" "32.6" "42.6"
-#> [3,] "CRC: m:1 (NP nodes at: 30/40/50/60/70)" "63.6"  "30.4" "14.3"
-#> [4,] "CRC: f:1 (NP nodes at: 30/40/50/60/70)" "19.9"  "72.6" "18.1"
-#> 
-#> $TAB_data_abs
-#>                                    outcome age    abs_risk
-#> 30  OVA: f:1 (NP nodes at: 30/40/50/60/70)  30 0.000275935
-#> 50  OVA: f:1 (NP nodes at: 30/40/50/60/70)  50 0.002318643
-#> 70  OVA: f:1 (NP nodes at: 30/40/50/60/70)  70 0.140884191
-#> 301 END: f:1 (NP nodes at: 30/40/50/60/70)  30 0.004334317
-#> 501 END: f:1 (NP nodes at: 30/40/50/60/70)  50 0.028380596
-#> 701 END: f:1 (NP nodes at: 30/40/50/60/70)  70 0.459492485
-#> 302 CRC: m:1 (NP nodes at: 30/40/50/60/70)  30 0.023454152
-#> 502 CRC: m:1 (NP nodes at: 30/40/50/60/70)  50 0.100489642
-#> 702 CRC: m:1 (NP nodes at: 30/40/50/60/70)  70 0.409700592
-#> 303 CRC: f:1 (NP nodes at: 30/40/50/60/70)  30 0.009081815
-#> 503 CRC: f:1 (NP nodes at: 30/40/50/60/70)  50 0.264044123
-#> 703 CRC: f:1 (NP nodes at: 30/40/50/60/70)  70 0.368019121
-#> 
-#> $TAB_data_relative
-#>                                    outcome age relative_risk
-#> 30  OVA: f:1 (NP nodes at: 30/40/50/60/70)  30      1.003637
-#> 50  OVA: f:1 (NP nodes at: 30/40/50/60/70)  50      1.716150
-#> 70  OVA: f:1 (NP nodes at: 30/40/50/60/70)  70     20.252942
-#> 301 END: f:1 (NP nodes at: 30/40/50/60/70)  30    184.267671
-#> 501 END: f:1 (NP nodes at: 30/40/50/60/70)  50     32.557557
-#> 701 END: f:1 (NP nodes at: 30/40/50/60/70)  70     42.584978
-#> 302 CRC: m:1 (NP nodes at: 30/40/50/60/70)  30     63.586167
-#> 502 CRC: m:1 (NP nodes at: 30/40/50/60/70)  50     30.372819
-#> 702 CRC: m:1 (NP nodes at: 30/40/50/60/70)  70     14.319748
-#> 303 CRC: f:1 (NP nodes at: 30/40/50/60/70)  30     19.945982
-#> 503 CRC: f:1 (NP nodes at: 30/40/50/60/70)  50     72.601256
-#> 703 CRC: f:1 (NP nodes at: 30/40/50/60/70)  70     18.073238
+
+knitr::kable(outsum$ABSOLUTE_CUM_RISKS)
 ```
 
-In the above code we do the same analysis but assuming a Weibull shape
-for the penetrance curve.
+| strata | Age=30 | Age=40 | Age=50 | Age=60 | Age=70 |
+|:---|:---|:---|:---|:---|:---|
+| OVA: f:1 (Cox) | 0.5 (0.3-1.4) | 1 (0.7-3) | 2.4 (1.7-7.1) | 5.7 (4.1-17.2) | 12.2 (8.7-36.6) |
+| END: f:1 (Cox) | 0.1 (0-0.1) | 0.4 (0.3-0.5) | 2.5 (1.6-3.4) | 11.2 (7-15) | 31.3 (19.6-42.1) |
+| CRC: m:1/f:1 (NP nodes at: 40/60/80) | 3 (1.2-7.6) | 6.2 (2.7-14.5) | 12.7 (5.4-35.2) | 20.3 (7.2-54.4) | 24.5 (8.8-63.2) |
 
 ``` r
-
-myParams_Weibull <- list(
-  
-  "CRC" = list(
-    penet.model   = "Weibull",
-    inheritance   = "dominant",
-    implic.loci   = TRUE,
-    gender.effect = TRUE),
-  
-  "END" = list(
-    penet.model   = "Weibull",
-    inheritance   = "dominant",
-    implic.loci   = TRUE,
-    gender.effect = TRUE),
-  
-  "OVA" = list(
-    penet.model   = "Weibull",
-    inheritance   = "dominant",
-    implic.loci   = TRUE,
-    gender.effect = TRUE)
-)
+knitr::kable(outsum$RELATIVE_CUM_RISKS_AGEC)
 ```
 
-``` r
-estim_Weibull <- generisk(Ft.pop = myFt,
-                          FIT.pars = myParams_Weibull,
-                          fA = 1/1946, 
-                          DATA = as.data.frame(dat_MLH1),
-                          B = 0,
-                          multi.pheno = "all",
-                          ncores = 4)
-#>  ________________________________________
-#>                                          
-#>   The generisk R program 
-#>   version: 0.1.1 
-#>                                         
-#>   Number of families:  236 
-#>    - CRC_event :  783 / 783  affected individuals will be analyzed 
-#>    - END_event :  70 / 70  affected individuals will be analyzed 
-#>    - OVA_event :  29 / 29  affected individuals will be analyzed 
-#>    - Unaffected individuals: 1418 / 3886  individuals with missing age at last news removed from analysis (age --> 0) 
-#> 
-#> Parallel computing using 4 / 8 available cores. 
-#>   -> Program initialization. 
-#>   -> Pre-calculations to speed-up likelihood algorithm. 
-#>   -> ML optimization by nlminb. 
-#>   0:     678.19668: 0.188841 0.992597 0.846142 0.144427 0.991560 0.860595 0.0309503 0.986142 0.669495 0.0238533 0.974509 0.725334
-#>   1:     551.62755: 0.621245 0.992597 0.846142 0.708062 0.991560 0.860595 0.686346 0.986142 0.669495 0.280368 0.974509 0.725334
-#>   2:     545.68606: 0.782732 0.992597 0.846142 0.818150 0.991560 0.860595 0.673825 0.986142 0.687404 0.277751 0.974509 0.726817
-#>   3:     540.58093: 0.999000 0.992597 0.846142 0.999000 0.991560 0.860595 0.384630 0.986142 0.669495 0.326700 0.974509 0.725334
-#>   4:     540.32602: 0.999000 0.992597 0.846142 0.999000 0.991560 0.860595 0.589682 0.986142 0.669495 0.387597 0.974509 0.725334
-#>   5:     540.32594: 0.999000 0.992597 0.846142 0.999000 0.991560 0.860595 0.588353 0.986142 0.669495 0.382887 0.974509 0.725334
-#>   6:     540.32594: 0.999000 0.992597 0.846142 0.999000 0.991560 0.860595 0.588353 0.986142 0.669495 0.382887 0.974509 0.725334
-#> 
-#>   job done !
-```
-
-Only 6 iterations are needed to reach convergence, but the -log(LKL) is
-higher compared to previous estimation: 540.32594 indicating a lower fit
-to the data.
-
-As you can see, risk estimate are quite different indicating that the
-shape of the curves (Weibull or non parametric using age nodes) is an
-important modeling choice.
-
-``` r
-plot_generisk(estim_Weibull, xmax = 80)
-```
-
-<img src="man/figures/README-unnamed-chunk-14-1.png" width="100%" />
-
-These two models can be compared formally using a likelihood ratio test,
-taking into account the different numbers of parameters between the
-models (24p for the NP model vs 12p for the Weibull model).
-
-``` r
-compareModels(estim_NP, estim_Weibull)
-#> $lr
-#> [1] 35.89847
-#> 
-#> $pvalue
-#> [1] 0.0003363934
-```
-
-This test indicates that the non parametric estimation with age nodes at
-30,40,50,60,70 better fits the data compared to the Weibull model
-(p-value \< 0.001).
+| strata | Age=0-30 | Age=30-40 | Age=40-50 | Age=50-60 | Age=60-70 | Age=70-120 |
+|:---|:---|:---|:---|:---|:---|:---|
+| OVA: f:1 (Cox) | 17.5 (12.5-52.7) | 17.5 (12.5-52.7) | 17.5 (12.5-52.7) | 17.5 (12.5-52.7) | 17.5 (12.5-52.7) | 17.5 (12.5-40.1) |
+| END: f:1 (Cox) | 29 (18.2-39) | 29 (18.2-39) | 29 (18.2-39) | 29 (18.2-39) | 29 (18.2-39) | 27.3 (18.2-29.9) |
+| CRC: m:1/f:1 (NP nodes at: 40/60/80) | 73 (28.1-185.1) | 42.9 (6.5-118) | 27 (2-91.9) | 10.7 (1.2-37.6) | 2.3 (0.8-16.7) | 0.9 (0.9-6.3) |

@@ -68,5 +68,11 @@ bootfam <- function(x, n=NULL){
 constrain1 <- function(x) ifelse(x>1,1,x)
 
 
+count_rep <- function(x){
+  rle_x <- rle(x)
+  out <- rle_x$lengths
+  names(out) <- rle_x$values
+  return(out)
+}
 
 

@@ -16,9 +16,8 @@ generisk(
   rel.tol.boot = 1e-06,
   approxFt.aa = TRUE,
   approx.np = "spline",
-  multi.pheno = "all",
-  init.weibull = NULL,
-  ncores = 1
+  first.cancer = FALSE,
+  init.weibull = NULL
 )
 }
 \arguments{
@@ -42,18 +41,17 @@ generisk(
 
 \item{approx.np}{linear or spline}
 
-\item{multi.pheno}{strategy in case of multiple diseases (can be "first" or "all")}
+\item{first.cancer}{keep only the first cancer for individuals with multiple cancers ?}
 
 \item{init.weibull}{initial values for Weibull model}
-
-\item{ncores}{number of cores used for parallel computing}
 }
 \value{
 to be completed
 }
 \description{
 generisk() is the main function of the generisk package.
-It performs penetrance estimation using maximum likelihood with the GRL method.
+It performs penetrance estimation using maximum likelihood with the GRL (Genotype Restricted Likelihood),
+PEL (Proband Excluded Likelihood), and PL (Prospective Likelihood) methods.
 It relies on the Elston-Stewart algorithm to factorizing family data.
 Different options are implemented for parametrization.
 }

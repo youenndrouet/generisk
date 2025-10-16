@@ -1,13 +1,13 @@
 Package: generisk
-Title: Estimation of the Genotype Restricted Likelihood (GRL) from family data 
-Version: 0.1.1
+Title: Estimation of penetrance from family data using maximum likelihood methods 
+Version: 0.1.4
 Author: Youenn Drouet
 Maintainer: Youenn Drouet <youenn.drouet@lyon.unicancer.fr>
-Description: Estimation of the Genotype Restricted Likelihood (GRL) from family data. 
+Description: The generisk package allow to perform penetrance estimation using maximum likelihood methods with the GRL (Genotype Restricted Likelihood), PEL (Proband Excluded Likelihood), and PL (Prospective Likelihood) methods. It relies on the Elston-Stewart algorithm to factorizing family data. Different options are implemented for parametrization.
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.3.2
+RoxygenNote: 7.3.3
 Imports: 
     dplyr,
     graphics,

@@ -38,7 +38,7 @@ pak::pak("youenndrouet/generisk")
 
 This is a basic example which shows you how to use generisk on a dataset of 236 Lynch Syndrome french families with MLH1 mutations. The first analysis of the full dataset comprising 537 families  with the GRL method is published here (Bonadona et al. JAMA 2011) https://jamanetwork.com/journals/jama/fullarticle/900645. 
 
-```{r }
+```{r load}
 library(generisk) # load the generisk package
 ```
 
@@ -47,7 +47,7 @@ First step is to format this dataset to comply with `generisk`. This data manipu
 As you can see, sex has to be recoded 1:male, 0:female and each phenotype (in our case cancer site) must be described by an "event" variable and a "time" (age) variable, just as in any "survival-like" modeling strategy. Censoring is performed at first colonoscopy and preventive surgeries.
 
 
-```{r }
+```{r data}
 library(dplyr) # load the dplyr package to manipulate the data
 
 dat_GRL <- eriscam_mlh1 %>%
@@ -64,8 +64,11 @@ dat_GRL <- eriscam_mlh1 %>%
                                     if_else(COLORECTUM < FIRST_COLONOSCOPY, 
                                             COLORECTUM, 
                                             FIRST_COLONOSCOPY),
-                                    AGE_AT_LAST_NEWS), 
-                             AGE_AT_LAST_NEWS),
+                                    COLORECTUM),
+                           if_else(!is.na(FIRST_COLONOSCOPY), 
+                                   FIRST_COLONOSCOPY,
+                                   AGE_AT_LAST_NEWS)
+                           ),
          
          END_event = if_else(!is.na(ENDOMETRIUM),
                              if_else(!is.na(HYSTERECTOMY), 
@@ -79,8 +82,12 @@ dat_GRL <- eriscam_mlh1 %>%
                                     if_else(ENDOMETRIUM < HYSTERECTOMY, 
                                             ENDOMETRIUM, 
                                             HYSTERECTOMY),
-                                    AGE_AT_LAST_NEWS), 
-                             AGE_AT_LAST_NEWS),
+                                    ENDOMETRIUM),
+                           if_else(!is.na(HYSTERECTOMY), 
+                                   HYSTERECTOMY,
+                                   AGE_AT_LAST_NEWS)
+                           ),
+           
          OVA_event = if_else(!is.na(OVARY),
                              if_else(!is.na(OOPHORECTOMY), 
                                     if_else(OVARY < OOPHORECTOMY, 
@@ -93,8 +100,11 @@ dat_GRL <- eriscam_mlh1 %>%
                                     if_else(OVARY < OOPHORECTOMY, 
                                             OVARY, 
                                             OOPHORECTOMY),
-                                    AGE_AT_LAST_NEWS), 
-                             AGE_AT_LAST_NEWS)
+                                    OVARY),
+                           if_else(!is.na(OOPHORECTOMY), 
+                                   OOPHORECTOMY,
+                                   AGE_AT_LAST_NEWS)
+                           )
          )
 
 wi_colectomy <- which(!is.na(dat_GRL$TOTAL_COLECTOMY))
@@ -104,14 +114,14 @@ dat_GRL$CRC_age[wi_colectomy] <- dat_GRL$TOTAL_COLECTOMY[wi_colectomy]
 
 Then we create another dataset selecting the columns required for `generisk` (warning: column order is important). 
 
-```{r }
+```{r format}
 dat_MLH1 <- dat_GRL %>% 
    select(FAMILY_ID, PERSON_ID, SEX_recoded, FATHER_ID, MOTHER_ID, PROBAND_FLAG, MLH1_STATUS, CRC_event, CRC_age, END_event, END_age, OVA_event, OVA_age)
 ```
 
 Then, we have to compute, for each cancer site, the cumulative incidence by age. The FRANCIM incidence data are used (available at https://www.santepubliquefrance.fr/maladies-et-traumatismes/cancers/cancer-du-sein/documents/rapport-synthese/estimations-nationales-de-l-incidence-et-de-la-mortalite-par-cancer-en-france-metropolitaine-entre-1990-et-2018-volume-1-tumeurs-solides-etud).  
 
-```{r}
+```{r incidence}
 # Populational incidence data for 100,000 individuals (ref: FRANCIM 2018)
 # at age classes : 
 # [0;14] [15;19] [20;24] [25;29] [30;34] [35;39] [40;44] [45;49] [50;54] 
@@ -131,8 +141,7 @@ OVAf <- c(0.4, 1.1, 1.4, 1.6, 2.0, 3.1, 5.2, 8.8, 14.1, 20.8, 29.7, 40.6, 48.7, 
 
 Since `generisk` requires that incidence data are given by age (1:120) and sex. The following code transforms incidence data by age group and per 100,000 individuals into smoothed cumulative risks. Then, we create a list named `myFt` combining these cumulative risks representing the cancer risks in the French general population. 
 
-```{r}
-
+```{r rates}
 rates_by1year_0to120 <- function(rates_byclasses){
     out <- c(0, # rates at age = 0 is 0
              rep(rates_byclasses[1],14), # ages = 1 to 14 
@@ -197,110 +206,100 @@ myFt <- list("CCR" = Ft.CRC.smo, "END" = Ft.END.smo, "OVA" = Ft.OVA.smo)
 
 ```
 
-The next step is to define other parameters required by `generisk`. This is done through a list of parameters defined for each cancer site.      
+The next step is to define other parameters required by `generisk`. This is done through a list of parameters defined for each cancer site. 
 
-```{r}
-myParams_NP <- list(
+The `penet.model` parameter must be chosen from the following three options:
+
+1. **"np" (Non-parametric)**  
+   A flexible function based on age nodes and cubic spline interpolation.
+
+2. **"Weibull"**  
+   A Weibull-like function with three parameters.
+
+3. **"Cox"**  
+   A Cox-like function where penetrance is modeled as the product of population incidence rates and a constant hazard ratio.
+
+Experience shows that the choice of model is very important. In practice, the optimal model—judged by its likelihood—is often a compromise between flexibility (i.e., degrees of freedom) and parsimony. A more flexible model may fit the data better but risks overfitting, while a more parsimonious model may generalize better but fail to capture complex patterns.
+
+For this demonstration, we use the non-parametric `"np"` option to model colorectal cancer (CRC) penetrance, with three pre-specified age nodes at 40, 60, and 80 years. This choice is motivated by the relatively high number of observed CRC cases, which allows for a more flexible modeling approach.
+
+In contrast, we use the less flexible `"Cox"` model for endometrial and ovarian cancers due to the smaller number of observed cases for these localizations. The Cox model provides a more stable estimate under limited data conditions by leveraging population incidence rates and assuming a constant hazard ratio.
+
+
+```{r params}
+myParams <- list(
   
   "CRC" = list(
     penet.model   = "np",
-    agenodes = c(30,40,50,60,70),
+    agenodes = c(40, 60, 80),
     inheritance   = "dominant",
     implic.loci   = TRUE,
-    gender.effect = TRUE),
+    gender.effect = FALSE),
   
   "END" = list(
-    penet.model   = "np",
-    agenodes = c(30,40,50,60,70),
+    penet.model   = "Cox",
     inheritance   = "dominant",
     implic.loci   = TRUE,
     gender.effect = TRUE),
   
   "OVA" = list(
-    penet.model   = "np",
-    agenodes = c(30,40,50,60,70),
+    penet.model   = "Cox",
     inheritance   = "dominant",
     implic.loci   = TRUE,
     gender.effect = TRUE)
 )
 ```
 
-Then we run the `generisk` program using these parameters. Calculations will be performed using 4 cores. The frequency of the mutations in MLH1 in the general population is assumed to be 1/1946 (cf https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5336409/pdf/nihms827219.pdf) 
+Then we run the `generisk` program using these parameters. The frequency of the mutations in MLH1 in the general population is assumed to be 1/1946 (cf https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5336409/pdf/nihms827219.pdf) 
 
-```{r}
-estim_NP <- generisk(Ft.pop = myFt,
-                          FIT.pars = myParams_NP,
+```{r estim}
+estim <- generisk(Ft.pop = myFt,
+                          FIT.pars = myParams,
+                          LIK.method = "GRL",
                           fA = 1/1946, 
-                          DATA = as.data.frame(dat_MLH1),
-                          B = 0,
-                          multi.pheno = "all",
-                          ncores = 4)
+                          DATA = as.data.frame(dat_MLH1))
 ```
-36 iterations are required to reach a -log(LKL) of 522.37670. 
+
+16 iterations are required to reach a -log(LKL) of 524.16653. 
 
 The `plot_generisk` function is useful to see the estimated penetrance curves. 
 
 ```{r fig.width = 9}
-plot_generisk(estim_NP, xmax = 80)
+plot_generisk(estim, xmax = 80)
 ```
 
 ```{r fig.width = 9}
-plot_generisk(estim_NP, type ="relative")
+plot_generisk(estim, xmax = 80, type ="relative")
 ```
 
-And estimations can be extracted using the `summarize_generisk` function.
-```{r}
-summarize_generisk(estim_NP, ages = c(30,50,70))
+Confidence intervals can be computed using the bootstrap approach, considering the family as the statistical unit. This method accounts for the correlation structure within families and provides robust uncertainty estimates for penetrance curves.
+
+For this demonstration, 200 bootstrap resamples are drawn. Computation takes approximately 15 minutes on a high-performance laptop. 
+
+```{r boot}
+load("estim_boot.RData")
+#estim_boot <- bootstrap_generisk(estim, B = 200) 
+#save(estim_boot, file = "estim_boot.RData")
 ```
 
-In the above code we do the same analysis but assuming a Weibull shape for the penetrance curve.
+The `plot_generisk` function with the `allcurves` option is useful for visualizing the 200 bootstrapped penetrance curves. This allows for a clear representation of the variability and uncertainty in the estimated penetrance across bootstrap samples. 
 
-```{r}
 
-myParams_Weibull <- list(
-  
-  "CRC" = list(
-    penet.model   = "Weibull",
-    inheritance   = "dominant",
-    implic.loci   = TRUE,
-    gender.effect = TRUE),
-  
-  "END" = list(
-    penet.model   = "Weibull",
-    inheritance   = "dominant",
-    implic.loci   = TRUE,
-    gender.effect = TRUE),
-  
-  "OVA" = list(
-    penet.model   = "Weibull",
-    inheritance   = "dominant",
-    implic.loci   = TRUE,
-    gender.effect = TRUE)
-)
+```{r plot_boot}
+plot_generisk(estim_boot, xmax = 80, allcurves = TRUE, multiple = TRUE )
 ```
 
-```{r}
-estim_Weibull <- generisk(Ft.pop = myFt,
-                          FIT.pars = myParams_Weibull,
-                          fA = 1/1946, 
-                          DATA = as.data.frame(dat_MLH1),
-                          B = 0,
-                          multi.pheno = "all",
-                          ncores = 4)
+Of note, the colored curves represent the median penetrance estimates across the 200 bootstrap resamples, while the black curve corresponds to the penetrance curve estimated from the original sample. This visual comparison highlights the variability captured through resampling and the robustness of the original estimate.
+
+From the `estim_boot` object, 95% confidence intervals can be extracted using the `summarize_generisk()` function. This function summarizes the bootstrap results and provides uncertainty estimates for the penetrance curves
+
+```{r sum_boot}
+outsum <- summarize_generisk(estim_boot, 
+                             ages = c(30, 40, 50, 60, 70),
+                             conf = 0.95)
+
+knitr::kable(outsum$ABSOLUTE_CUM_RISKS)
+knitr::kable(outsum$RELATIVE_CUM_RISKS_AGEC)
 
 ```
-Only 6 iterations are needed to reach convergence, but the -log(LKL) is higher compared to previous estimation: 540.32594 indicating a lower fit to the data. 
 
-As you can see, risk estimate are quite different indicating that the shape of the curves (Weibull or non parametric using age nodes) is an important modeling choice.
-
-```{r fig.width=9}
-plot_generisk(estim_Weibull, xmax = 80)
-```
-
-These two models can be compared formally using a likelihood ratio test, taking into account the different numbers of parameters between the models (24p for the NP model vs 12p for the Weibull model).
-
-```{r}
-compareModels(estim_NP, estim_Weibull)
-```
-
-This test indicates that the non parametric estimation with age nodes at 30,40,50,60,70 better fits the data compared to the Weibull model (p-value < 0.001).

@@ -4,7 +4,14 @@
 \alias{summarize_generisk}
 \title{summarize object estimated with the generisk() function}
 \usage{
-summarize_generisk(x, conf = 0.95, ages = seq(10, 70, 10))
+summarize_generisk(
+  x,
+  conf = 0.95,
+  ages = seq(10, 70, 10),
+  digit_abs = 1,
+  digit_rr = 1,
+  digit_abs_agec = 1
+)
 }
 \arguments{
 \item{x}{an object returned by the generisk function}
@@ -12,6 +19,12 @@ summarize_generisk(x, conf = 0.95, ages = seq(10, 70, 10))
 \item{conf}{show bootstrapped 95\% confidence intervals}
 
 \item{ages}{at which ages to summarize ?}
+
+\item{digit_abs}{digit for absolute risks}
+
+\item{digit_rr}{digit for relative risks}
+
+\item{digit_abs_agec}{digit for absolute risks by agec}
 }
 \value{
 to be completed

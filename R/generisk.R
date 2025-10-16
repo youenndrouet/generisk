@@ -1,7 +1,8 @@
 #' estimate age-risk (penetrance) functions from family data
 #'
 #' generisk() is the main function of the generisk package.
-#' It performs penetrance estimation using maximum likelihood with the GRL method.
+#' It performs penetrance estimation using maximum likelihood with the GRL (Genotype Restricted Likelihood),
+#' PEL (Proband Excluded Likelihood), and PL (Prospective Likelihood) methods.
 #' It relies on the Elston-Stewart algorithm to factorizing family data.
 #' Different options are implemented for parametrization.
 #'
@@ -16,10 +17,8 @@
 #' @param approxFt.aa option to calculate Ft.aa
 #' @param init.weibull initial values for Weibull model
 #' @param approx.np linear or spline
-#' @param multi.pheno strategy in case of multiple diseases (can be "first" or "all")
-#' @param ncores number of cores used for parallel computing
+#' @param first.cancer keep only the first cancer for individuals with multiple cancers ?
 #'
-#' @import parallel
 #' @importFrom stats runif
 #' @importFrom stats nlminb
 #' @importFrom stats na.omit
@@ -53,9 +52,8 @@ generisk <- function(
   rel.tol.boot = 1e-6,
   approxFt.aa = TRUE,
   approx.np = "spline",
-  multi.pheno = "all",
-  init.weibull = NULL,
-  ncores = 1     # number of cores (default = 1)
+  first.cancer = FALSE,
+  init.weibull = NULL
 ){
 
   minrisk = 1e-16   #default minimum absolute risk is almost 0 (prevent singularities)
@@ -114,7 +112,7 @@ generisk <- function(
 
       # multiple diseases
 
-      if(multi.pheno == "first"){
+      if(first.cancer){
 
         ## since we restrict analyses to the "competitive risk" framework,
         ## only the first disease is kept for individuals with multiple diseases
@@ -147,16 +145,9 @@ generisk <- function(
 
     }else{
 
-      if(multi.pheno == "all"){
-
         # disease with missing age at diagnosis are discarded
         DATA_generisk[wi_aff, cc_ages][is.na(DATA_generisk[wi_aff, cc_ages])] <- 0
         DATA_generisk[wi_aff, cc_event][DATA_generisk[wi_aff, cc_ages] == 0] <- 0
-
-      }else{
-
-        stop("unknown multi.pheno option")
-      }
 
     }
   }
@@ -184,28 +175,16 @@ generisk <- function(
 
   cat('\n')
 
-  if(ncores > 1){
-
-    available_cores <- detectCores()
-
-    if(available_cores >= ncores){
-      cat("Parallel computing using", ncores, "/", available_cores, "available cores. \n")
-
-      # set up each worker
-      cl <- makeCluster(ncores)
-      clusterEvalQ(cl, {
-        library(generisk)
-        NULL
-      })
-
-    }else{
-      cl <- NULL
-      cat("Available cores < ", ncores, ", please consider decreasing ncores to perform parallel computing. \n")
-    }
-
-  }else{
-    cl <- NULL
+  ## PEL implementation
+  ## Index case is discarded by setting his age at 0
+  if(LIK.method == "PEL"){
+    wi_index <- which(DATA_generisk[,6] == 1)
+    DATA_generisk[wi_index, cc_ages] <- 0
+    DATA_generisk[wi_index, cc_event] <- 0
   }
+
+  ##
+
 
   # STEP 0 : checking the consistency of family data
 
@@ -561,10 +540,10 @@ generisk <- function(
   #pars.lower[grep("HR",parameters,fixed = TRUE)] <- lower.cox
 
   cat("  -> ML optimization by nlminb. \n")
+
   fit <- nlminb(start = pars.init,  # ETAPES 3 et 4
                 objective = function(x) nloglik(x,
                                                 return_lklbyfam = FALSE,
-                                                cl = cl,
                                                 'G' = G,
                                                 'X' = X,
                                                 'Ft.pop' = Ft.pop,
@@ -580,8 +559,7 @@ generisk <- function(
 
   fta <- array(ftvproc(x = fit$par, args = list('Ft.pop' = Ft.pop, 'FIT.pars' = FIT.pars, 'approxFt.aa' = approxFt.aa, 'approx.np' = approx.np, 'PARAMS.mask' = PARAMS.mask, 'G' =G)), dim=c(121,2,ndis,ng))
 
-  lklbyfam <- nloglik(fit$par, return_lklbyfam = TRUE, cl = cl, 'G' =G, 'X' = X, 'Ft.pop' = Ft.pop, 'LIK.method' = LIK.method, 'FIT.pars' = FIT.pars, 'approxFt.aa' = approxFt.aa, 'approx.np' = approx.np, 'PARAMS.mask' = PARAMS.mask, 'penetmodels' = penetmodels)
-
+  lklbyfam <- nloglik(fit$par, return_lklbyfam = TRUE, 'G' =G, 'X' = X, 'Ft.pop' = Ft.pop, 'LIK.method' = LIK.method, 'FIT.pars' = FIT.pars, 'approxFt.aa' = approxFt.aa, 'approx.np' = approx.np, 'PARAMS.mask' = PARAMS.mask, 'penetmodels' = penetmodels)
 
   out <- list("fit" = c(fit,
                         "paramsmask" = list(PARAMS.mask),
@@ -605,21 +583,10 @@ generisk <- function(
               "DATA_generisk" = DATA_generisk)
 
   if(B > 0){
-
-    if(!is.null(cl)){stopCluster(cl)}
-
-    out <- bootstrap_generisk(generisk_obj = out,
-                                  B = B,
-                                  ncores = ncores)
-
-
+    out <- bootstrap_generisk(generisk_obj = out, B = B)
   }else{
-
     cat("\n  job done !\n")
-
   }
-
-  if(!is.null(cl)){stopCluster(cl)}
 
   return(out)
 

@@ -8,7 +8,10 @@ compute_cumrisk(
   x,
   conf = 0.95,
   ages = seq(30, 70, 10),
-  traits = names(x$params$FIT.pars)
+  traits = names(x$params$FIT.pars),
+  digit_abs = 1,
+  digit_rr = 1,
+  digit_abs_agec = 1
 )
 }
 \arguments{
@@ -19,6 +22,12 @@ compute_cumrisk(
 \item{ages}{at which ages ?}
 
 \item{traits}{over which traits ?}
+
+\item{digit_abs}{digit for absolute risks}
+
+\item{digit_rr}{digit for relative risks}
+
+\item{digit_abs_agec}{digit for absolute risks by agec}
 }
 \value{
 to be completed

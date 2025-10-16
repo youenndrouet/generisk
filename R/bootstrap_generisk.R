@@ -1,7 +1,6 @@
 #' bootstrap a generisk model
 #'
 #' @param B number of bootstrap
-#' @param ncores number of workers multi-core computing
 #' @param generisk_obj object from generisk
 #' @param start init values for parameters, if "fit" starts from the initial fit, otherwise starts from population incidence
 #'
@@ -16,7 +15,7 @@
 #'
 #' @examples
 #' #to be completed
-bootstrap_generisk <- function(generisk_obj, B, ncores, start = "fit"){
+bootstrap_generisk <- function(generisk_obj, B, start = "fit"){
 
   if(start == "fit"){
     pars.init    <- generisk_obj$fit$par
@@ -50,30 +49,6 @@ bootstrap_generisk <- function(generisk_obj, B, ncores, start = "fit"){
   RESboot <- NULL
   ftaboot <- NULL
 
-  if(ncores > 1){
-
-    available_cores <- detectCores()
-
-    if(available_cores >= ncores){
-      cat("Parallel computing using", ncores, "/", available_cores, "available cores. \n")
-
-      # set up each worker
-      cl <- makeCluster(ncores)
-      clusterEvalQ(cl, {
-        library(generisk)
-        NULL
-      })
-
-    }else{
-      cl <- NULL
-      cat("Available cores < ", ncores, ", please consider decreasing ncores to perform parallel computing. \n")
-    }
-
-  }else{
-    cl <- NULL
-  }
-
-
   for (b in seq(B)){
 
     # directly use the pre-computed X object
@@ -82,7 +57,6 @@ bootstrap_generisk <- function(generisk_obj, B, ncores, start = "fit"){
     fit.boot <- nlminb(start = pars.init,
                        objective = function(x) nloglik(x,
                                                        return_lklbyfam = FALSE,
-                                                       cl = cl,
                                                        'G' = G,
                                                        'X' = X.boot,
                                                        'Ft.pop' = Ft.pop,
@@ -115,8 +89,6 @@ bootstrap_generisk <- function(generisk_obj, B, ncores, start = "fit"){
   }
   close(pb)
   cat("\n  job done !\n")
-
-  if(!is.null(cl)){stopCluster(cl)}
 
   is.bootstrap <- ('boot' %in% names(generisk_obj))
   out <- generisk_obj
